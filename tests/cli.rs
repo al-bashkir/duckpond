@@ -354,6 +354,37 @@ fn shell_eval_is_injection_safe() {
     }
 }
 
+/// bash and zsh evaluate a value given to an integer parameter as arithmetic, and a
+/// subscript in it runs command substitution: quoting cannot help, so `load` must refuse.
+#[test]
+fn load_refuses_arithmetic_in_shell_integer_names() {
+    let e = Env::new();
+    e.ok(&["create", "P"], "");
+    // OPTIND is an integer in bash, HISTSIZE in zsh.
+    let hostile = "OPTIND=zz[$(touch PWNED)0]\nHISTSIZE=PPID[$(touch PWNED)1]\n";
+    e.ok(&["import", "P", "-"], hostile);
+    for shell in ["zsh", "bash"] {
+        if !usable(shell) {
+            continue;
+        }
+        let mut c = e.command(shell);
+        c.env("DP", env!("CARGO_BIN_EXE_duckpond"))
+            .args(["-c", r#"eval "$("$DP" load P)""#]);
+        run(c, "");
+        assert!(!e.cwd().join("PWNED").exists(), "{shell} ran injected code");
+    }
+    let err = e.fail(&["load", "P"], "", &["PWNED"]);
+    assert!(err.contains("HISTSIZE"), "{err}");
+    // fish has no integer parameters.
+    e.ok(&["load", "P", "--shell", "fish"], "");
+
+    e.ok(&["import", "P", "-"], "OPTIND=1\nHISTSIZE=-5000\n");
+    assert_eq!(
+        e.ok(&["load", "P"], "").stdout,
+        "export HISTSIZE='-5000'\nexport OPTIND='1'\n"
+    );
+}
+
 #[test]
 fn launch_runs_with_vars_and_propagates_exit() {
     let e = Env::new();

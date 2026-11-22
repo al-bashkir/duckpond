@@ -161,7 +161,7 @@ pub fn load(store: &Store, profile: Option<ProfileName>, shell: Shell) -> Result
     refuse_terminal("load", &profile)?;
     let p = open(store, pick::profile(store, profile)?)?;
     warn_expired(&p.vars);
-    print(&vars::exports(&p.vars, shell))
+    print(&vars::exports(&p.vars, shell)?)
 }
 
 pub fn unload(store: &Store, profile: Option<ProfileName>, shell: Shell) -> Result<()> {

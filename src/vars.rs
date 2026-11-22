@@ -161,12 +161,53 @@ fn quote(value: &str, shell: Shell) -> String {
     }
 }
 
-pub fn exports(vars: &Vars, shell: Shell) -> String {
+/// bash 5.3 and zsh 5.9 evaluate text assigned to these parameters as arithmetic, and a
+/// subscript in it runs command substitution, whatever the quoting.
+const SHELL_INTEGERS: &[&str] = &[
+    "COLUMNS",
+    "EGID",
+    "ERRNO",
+    "EUID",
+    "FUNCNEST",
+    "GID",
+    "HISTCMD",
+    "HISTSIZE",
+    "KEYTIMEOUT",
+    "LINES",
+    "LISTMAX",
+    "MAILCHECK",
+    "OPTIND",
+    "RANDOM",
+    "SAVEHIST",
+    "SECONDS",
+    "SHLVL",
+    "SRANDOM",
+    "TRY_BLOCK_ERROR",
+    "TRY_BLOCK_INTERRUPT",
+    "UID",
+    "ZLE_RPROMPT_INDENT",
+];
+
+fn plain_integer(v: &str) -> bool {
+    let digits = v.strip_prefix('-').unwrap_or(v);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Shell code for `eval`. sh output refuses a shell integer parameter that holds more than a number.
+pub fn exports(vars: &Vars, shell: Shell) -> Result<String> {
+    let unsafe_int = |(n, v): &(&VarName, &Var)| {
+        SHELL_INTEGERS.contains(&n.as_ref()) && !plain_integer(&v.value)
+    };
+    if let (Shell::Sh, Some((n, _))) = (shell, vars.0.iter().find(unsafe_int)) {
+        return Err(
+            format!("{n} is an integer in bash and zsh: its value must be a plain number").into(),
+        );
+    }
     let line = |(n, v): (&VarName, &Var)| match shell {
         Shell::Sh => format!("export {n}={}\n", quote(&v.value, shell)),
         Shell::Fish => format!("set -gx {n} {}\n", quote(&v.value, shell)),
     };
-    vars.0.iter().map(line).collect()
+    Ok(vars.0.iter().map(line).collect())
 }
 
 pub fn unsets(vars: &Vars, shell: Shell) -> String {
@@ -505,7 +546,7 @@ mod tests {
             ("D", "$(x) `y` $Z"),
         ]);
         assert_eq!(
-            exports(&v, Shell::Sh),
+            exports(&v, Shell::Sh).unwrap(),
             "export A='it'\\''s'\nexport B='a\\b'\nexport C='l1\nl2'\nexport D='$(x) `y` $Z'\n"
         );
     }
@@ -514,9 +555,23 @@ mod tests {
     fn fish_quoting() {
         let v = vars(&[("A", "it's"), ("B", "a\\b"), ("C", "l1\nl2"), ("D", "$(x)")]);
         assert_eq!(
-            exports(&v, Shell::Fish),
+            exports(&v, Shell::Fish).unwrap(),
             "set -gx A 'it\\'s'\nset -gx B 'a\\\\b'\nset -gx C 'l1\nl2'\nset -gx D '$(x)'\n"
         );
+    }
+
+    #[test]
+    fn sh_integer_names_take_only_plain_numbers() {
+        for ok in ["0", "42", "-5000"] {
+            let v = vars(&[("SHLVL", ok), ("PLAIN", "x[$(y)]")]);
+            assert!(exports(&v, Shell::Sh).is_ok(), "{ok}");
+        }
+        for bad in ["", "-", "5a", "+5", "1 ", "PPID[$(x)1]"] {
+            let v = vars(&[("SHLVL", bad)]);
+            let msg = err(exports(&v, Shell::Sh));
+            assert!(msg.contains("SHLVL"), "{bad:?}: {msg}");
+            assert!(exports(&v, Shell::Fish).is_ok(), "{bad:?}");
+        }
     }
 
     #[test]

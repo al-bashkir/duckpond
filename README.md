@@ -96,6 +96,10 @@ so secrets do not land in your scrollback by mistake.
 - `DUCKPOND_PASSPHRASE` skips the passphrase prompt (for scripts). Other processes of
   your user can read the environment, so use it with care. `launch` removes it from the
   child's environment.
+- `load` refuses a profile in which a variable that bash or zsh keeps as an integer
+  (`OPTIND`, `HISTSIZE`, `SHLVL` and others) holds anything but a plain number. These shells
+  evaluate such a value as arithmetic, and that can run commands. A variable that you
+  declare as an integer in your own shell rc file is not on this list.
 - Dotenv import/export is raw `NAME=value` per line (Docker `--env-file` rules: no quote
   removal). Export refuses values that contain line breaks.
 
