@@ -313,6 +313,21 @@ fn have(program: &str) -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
+/// A tool a test needs. Missing: skip locally, but fail in CI (`CI` is set), so a runner
+/// without gpg, zsh or bash cannot pass by skipping. fish is optional everywhere.
+fn usable(program: &str) -> bool {
+    if have(program) {
+        return true;
+    }
+    let ci = std::env::var_os("CI").is_some();
+    assert!(
+        !ci || program == "fish",
+        "{program} must be installed in CI"
+    );
+    eprintln!("skip {program}: not installed");
+    false
+}
+
 #[test]
 fn shell_eval_is_injection_safe() {
     let e = Env::new();
@@ -322,8 +337,7 @@ fn shell_eval_is_injection_safe() {
     let script = r#"eval "$("$DP" load P)"; printf %s "$V"; printf '\0'; eval "$("$DP" unload P)"; printf %s "${V-unset}""#;
     let mut ran = 0;
     for shell in ["zsh", "bash"] {
-        if !have(shell) {
-            eprintln!("skip {shell}: not installed");
+        if !usable(shell) {
             continue;
         }
         ran += 1;
@@ -360,8 +374,7 @@ fn launch_runs_with_vars_and_propagates_exit() {
 
 #[test]
 fn gpg_lock_round_trip() {
-    if !have("gpg") {
-        eprintln!("skip gpg test: gpg not installed");
+    if !usable("gpg") {
         return;
     }
     // Short path: gpg-agent sockets live in GNUPGHOME and have a length limit.
@@ -465,8 +478,7 @@ fn init_wrappers_eval_help_and_pass_through() {
     e.ok(&["create", SPACED], "");
     e.ok(&["set", SPACED, "V"], HOSTILE);
     for shell in ["zsh", "bash", "fish"] {
-        if !have(shell) {
-            eprintln!("skip {shell}: not installed");
+        if !usable(shell) {
             continue;
         }
         let stub = "compdef() { print -r -- \"$*\" >> compdefs; }\n";

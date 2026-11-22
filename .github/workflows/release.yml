@@ -64,16 +64,31 @@ jobs:
     permissions:
       contents: write # create the release and upload assets
     steps:
+      # Every artifact of the run, each in a directory with its name.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          path: dist
-          merge-multiple: true
+          path: artifacts
+      # Publish exactly one tarball per build target: a missing target or any other
+      # artifact (for example one uploaded by a step of the ci job) stops the release.
+      - name: Take the build job's tarballs
+        run: |
+          mkdir dist
+          # The targets of the build matrix.
+          for target in x86_64-unknown-linux-musl aarch64-apple-darwin; do
+            mv "artifacts/$target/duckpond-$GITHUB_REF_NAME-$target.tar.gz" dist/
+          done
+          left=$(find artifacts -type f)
+          if [ -n "$left" ]; then
+            printf 'Not from the build job, or a target missing above:\n%s\n' "$left"
+            exit 1
+          fi
       - name: Create the GitHub release
         working-directory: dist
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          sha256sum duckpond-*.tar.gz > SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes \
-            duckpond-*.tar.gz SHA256SUMS
+          sha256sum -- *.tar.gz > SHA256SUMS
+          # --verify-tag: never let gh create the tag; it must already exist on GitHub.
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+            --generate-notes -- *.tar.gz SHA256SUMS

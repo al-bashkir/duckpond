@@ -1,0 +1,7 @@
+[advisories]
+# RUSTSEC-2026-0387: timing variability in crypto-bigint 0.5. It comes only through
+# age 0.12 -> p256/hpke, which serve age's P-256 and HPKE recipient types. duckpond passes
+# only scrypt identities (passphrase) and uses gpg for keys, so that code never runs here.
+# age 0.12.1 is the newest release and p256/hpke are not optional. Remove this when an age
+# release moves to crypto-bigint >= 0.7.6.
+ignore = ["RUSTSEC-2026-0387"]
