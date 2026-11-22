@@ -74,6 +74,10 @@ impl Env {
         if let Some(p) = &self.pass {
             c.env("DUCKPOND_PASSPHRASE", p);
         }
+        // Keep coverage data of the child binary when run under cargo llvm-cov.
+        if let Some(f) = std::env::var_os("LLVM_PROFILE_FILE") {
+            c.env("LLVM_PROFILE_FILE", f);
+        }
         c
     }
 

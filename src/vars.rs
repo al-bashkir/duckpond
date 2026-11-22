@@ -44,6 +44,19 @@ impl FromStr for Expiry {
     }
 }
 
+/// None keeps the field; an empty comment and `Expiry::Never` clear it.
+fn apply_meta(var: &mut Var, comment: Option<String>, expires: Option<Expiry>) {
+    if let Some(c) = comment {
+        var.comment = Some(c).filter(|c| !c.is_empty());
+    }
+    if let Some(e) = expires {
+        var.expires = match e {
+            Expiry::On(d) => Some(d),
+            Expiry::Never => None,
+        };
+    }
+}
+
 fn check_nul(name: &VarName, value: &str) -> Result<()> {
     if value.contains('\0') {
         return Err(format!("value of {name} contains a NUL byte").into());
@@ -59,27 +72,20 @@ impl Vars {
         comment: Option<String>,
         expires: Option<Expiry>,
     ) -> Result<()> {
-        let mut var = self.0.get(&name).cloned();
-        match (value, &mut var) {
-            (Some(v), _) => {
-                check_nul(&name, &v)?;
-                var.get_or_insert_default().value = v;
+        let old = self.0.get(&name).cloned();
+        let mut var = match (value, old) {
+            (Some(value), old) => {
+                check_nul(&name, &value)?;
+                Var {
+                    value,
+                    ..old.unwrap_or_default()
+                }
             }
-            (None, Some(_)) => {}
+            (None, Some(old)) => old,
             (None, None) => return Err(format!("variable {name} does not exist").into()),
-        }
-        let var = var.get_or_insert_default();
-        match comment {
-            Some(c) if c.is_empty() => var.comment = None,
-            Some(c) => var.comment = Some(c),
-            None => {}
-        }
-        match expires {
-            Some(Expiry::On(d)) => var.expires = Some(d),
-            Some(Expiry::Never) => var.expires = None,
-            None => {}
-        }
-        self.0.insert(name, var.clone());
+        };
+        apply_meta(&mut var, comment, expires);
+        self.0.insert(name, var);
         Ok(())
     }
 

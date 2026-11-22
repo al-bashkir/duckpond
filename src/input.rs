@@ -50,12 +50,19 @@ fn check_new(first: &str, second: Option<&str>) -> Result<()> {
 }
 
 pub fn new_passphrase(profile: &ProfileName) -> Result<SecretString> {
-    if let Some(p) = env_passphrase() {
-        check_new(p.expose_secret(), None)?;
-        return Ok(p);
+    match env_passphrase() {
+        Some(p) => check_new(p.expose_secret(), None).map(|()| p),
+        None => new_from(prompt, profile),
     }
-    let first = prompt(&format!("New passphrase for \"{profile}\": ")).map_err(no_terminal)?;
-    let second = prompt("Repeat the passphrase: ").map_err(no_terminal)?;
+}
+
+/// Asks twice through `ask` (the tty prompt in production) and checks the answers.
+fn new_from(
+    mut ask: impl FnMut(&str) -> io::Result<String>,
+    profile: &ProfileName,
+) -> Result<SecretString> {
+    let first = ask(&format!("New passphrase for \"{profile}\": ")).map_err(no_terminal)?;
+    let second = ask("Repeat the passphrase: ").map_err(no_terminal)?;
     check_new(&first, Some(&second))?;
     Ok(SecretString::from(first))
 }
@@ -87,14 +94,18 @@ pub fn values(names: &[VarName]) -> Result<Vec<String>> {
 }
 
 pub fn confirm(question: &str) -> Result<bool> {
-    let mut tty = std::fs::OpenOptions::new()
+    let tty = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .open("/dev/tty")?;
-    write!(tty, "{question} [y/N] ")?;
-    tty.flush()?;
+    ask_yes(question, BufReader::new(&tty), &tty)
+}
+
+fn ask_yes(question: &str, mut input: impl BufRead, mut output: impl Write) -> Result<bool> {
+    write!(output, "{question} [y/N] ")?;
+    output.flush()?;
     let mut line = String::new();
-    BufReader::new(&tty).read_line(&mut line)?;
+    input.read_line(&mut line)?;
     Ok(matches!(line.trim().to_lowercase().as_str(), "y" | "yes"))
 }
 
@@ -129,6 +140,75 @@ mod tests {
     #[test]
     fn invalid_utf8_is_an_error() {
         assert!(from_reader(&names(&["A"]), &b"\xff"[..]).is_err());
+    }
+
+    fn answers(list: &[&'static str]) -> impl FnMut(&str) -> io::Result<String> {
+        let mut it = list.iter();
+        move |_| Ok(it.next().expect("no more answers").to_string())
+    }
+
+    fn enxio() -> io::Error {
+        io::Error::from_raw_os_error(ENXIO)
+    }
+
+    #[test]
+    fn missing_terminal_gets_a_hint() {
+        for e in [enxio(), io::ErrorKind::NotFound.into()] {
+            assert!(
+                no_terminal(e)
+                    .to_string()
+                    .contains("set DUCKPOND_PASSPHRASE")
+            );
+        }
+        let other = no_terminal(io::ErrorKind::PermissionDenied.into()).to_string();
+        assert!(!other.contains("DUCKPOND_PASSPHRASE"), "{other}");
+    }
+
+    #[test]
+    fn new_passphrase_asks_twice_and_checks() {
+        let p = new_from(answers(&["password1", "password1"]), &"P".parse().unwrap());
+        assert_eq!(p.unwrap().expose_secret(), "password1");
+        let e = new_from(answers(&["password1", "password2"]), &"P".parse().unwrap());
+        assert!(e.unwrap_err().to_string().contains("do not match"));
+        let e = new_from(|_| Err(enxio()), &"P".parse().unwrap());
+        assert!(e.unwrap_err().to_string().contains("no terminal"));
+    }
+
+    #[test]
+    fn new_passphrase_prompts_name_the_profile() {
+        let mut seen = Vec::new();
+        let ask = |q: &str| {
+            seen.push(q.to_string());
+            Ok("password1".to_string())
+        };
+        new_from(ask, &"My Prof".parse().unwrap()).unwrap();
+        assert_eq!(
+            seen,
+            [
+                "New passphrase for \"My Prof\": ",
+                "Repeat the passphrase: "
+            ]
+        );
+    }
+
+    #[test]
+    fn confirm_accepts_only_yes() {
+        for (line, want) in [
+            ("y\n", true),
+            ("YES\n", true),
+            (" yes \n", true),
+            ("\n", false),
+            ("no\n", false),
+            ("", false),
+        ] {
+            let mut out = Vec::new();
+            assert_eq!(
+                ask_yes("Delete?", line.as_bytes(), &mut out).unwrap(),
+                want,
+                "{line:?}"
+            );
+            assert_eq!(out, b"Delete? [y/N] ");
+        }
     }
 
     #[test]
