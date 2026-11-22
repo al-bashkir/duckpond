@@ -159,6 +159,9 @@ fn errors_are_clean() {
 
     let err = e.fail(&["create", "P"], "", &leak);
     assert!(err.contains("already exists"), "{err}");
+    let err = e.fail(&["create", "G", "--gpg"], "", &leak);
+    assert!(err.contains("--gpg KEY"), "{err}");
+    assert!(!e.profile_file("G").exists());
     e.fail(&["list", "nope"], "", &leak);
     e.fail(&["load", "nope"], "", &leak);
     e.fail(&["set", "nope", "A"], SECRET, &leak);

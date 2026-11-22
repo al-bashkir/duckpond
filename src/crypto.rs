@@ -128,6 +128,55 @@ fn gpg_message(stderr: &str) -> String {
     lines.join("\n").trim().to_string()
 }
 
+/// A GPG secret key that can encrypt, as offered by `create --gpg` without KEY.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecretKey {
+    pub fingerprint: String,
+    pub uid: String,
+}
+
+impl std::fmt::Display for SecretKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let short = self.fingerprint.len().saturating_sub(16);
+        write!(f, "{} [{}]", self.uid, &self.fingerprint[short..])
+    }
+}
+
+pub fn secret_keys() -> Result<Vec<SecretKey>> {
+    let (out, _) = run_gpg(&["--batch", "--with-colons", "--list-secret-keys"], b"")?;
+    Ok(parse_secret_keys(&String::from_utf8_lossy(&out)))
+}
+
+/// Parses `--with-colons` output: one block per `sec` record.
+pub fn parse_secret_keys(colons: &str) -> Vec<SecretKey> {
+    let mut blocks: Vec<Vec<Vec<&str>>> = Vec::new();
+    for line in colons.lines() {
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields[0] == "sec" {
+            blocks.push(Vec::new());
+        }
+        if let Some(block) = blocks.last_mut() {
+            block.push(fields);
+        }
+    }
+    blocks.iter().filter_map(|b| usable_key(b)).collect()
+}
+
+fn field<'a>(fields: &[&'a str], i: usize) -> &'a str {
+    fields.get(i).copied().unwrap_or("")
+}
+
+/// Field 2 = validity (e/r/d/i: expired, revoked, disabled, invalid); field 12 = capabilities,
+/// where an uppercase `E` means the key as a whole can encrypt. First `fpr` = primary key.
+fn usable_key(block: &[Vec<&str>]) -> Option<SecretKey> {
+    let sec = &block[0];
+    let valid = !matches!(field(sec, 1), "e" | "r" | "d" | "i");
+    let record = |kind: &str| block.iter().find(|f| f[0] == kind).map(|f| field(f, 9));
+    let fingerprint = record("fpr")?.to_string();
+    let uid = record("uid").unwrap_or_default().to_string();
+    (valid && field(sec, 11).contains('E')).then_some(SecretKey { fingerprint, uid })
+}
+
 pub fn parse_enc_to(stderr: &str) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
     for line in stderr.lines() {
@@ -152,6 +201,38 @@ mod tests {
 
     fn open(cipher: &[u8], p: &str) -> Result<(Vec<u8>, Lock)> {
         decrypt(cipher, || Ok(SecretString::from(p)))
+    }
+
+    // Real `gpg --list-secret-keys --with-colons` output (throwaway keys), plus a revoked key.
+    const SECRET_KEYS: &str = "\
+sec:u:255:22:226559A181480696:1795351498:::u:::scESC:::+::ed25519:::0:
+fpr:::::::::717E27AC3AA440C6BB05F2E4226559A181480696:
+uid:u::::1795351498::53AB29141270E65356D4200F2EB90D1F09DE2054::Alice <alice@example.invalid>::::::::::0:
+ssb:u:255:18:AE9F15D1A843D155:1795351498::::::e:::+::cv25519::
+fpr:::::::::1ABB1CD952E448B9B3B8C3ADAE9F15D1A843D155:
+sec:u:255:22:FDF75656D44AB377:1795351498:::u:::scSC:::+::ed25519:::0:
+fpr:::::::::68CED0D3BF01767940951C77FDF75656D44AB377:
+uid:u::::1795351498::BB0F2D33372995AABC950DDADC6D40335C72BAC8::Signer <sign@example.invalid>::::::::::0:
+sec:r:255:22:1111111111111111:1795351498:::u:::scESC:::+::ed25519:::0:
+fpr:::::::::00000000000000000000000001111111111111111:
+uid:r::::1795351498::00::Revoked <rev@example.invalid>::::::::::0:
+";
+
+    #[test]
+    fn secret_keys_keep_only_usable_encryption_keys() {
+        let keys = parse_secret_keys(SECRET_KEYS);
+        assert_eq!(
+            keys,
+            [SecretKey {
+                fingerprint: "717E27AC3AA440C6BB05F2E4226559A181480696".into(),
+                uid: "Alice <alice@example.invalid>".into(),
+            }]
+        );
+        assert_eq!(
+            keys[0].to_string(),
+            "Alice <alice@example.invalid> [226559A181480696]"
+        );
+        assert!(parse_secret_keys("").is_empty());
     }
 
     #[test]

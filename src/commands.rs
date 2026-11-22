@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use chrono::{Local, NaiveDate};
 
+use crate::cli::GpgArg;
 use crate::crypto::Lock;
 use crate::error::{Error, Result};
 use crate::input;
@@ -44,14 +45,16 @@ pub fn list(store: &Store, profile: Option<ProfileName>, reveal: bool) -> Result
     print(&vars::render_table(&p.vars, reveal, today()))
 }
 
-pub fn create(store: &Store, name: ProfileName, gpg: Vec<String>) -> Result<()> {
+pub fn create(store: &Store, name: ProfileName, gpg: Vec<GpgArg>) -> Result<()> {
     if store.exists(&name) {
         return Err(format!("profile \"{name}\" already exists").into());
     }
     let lock = if gpg.is_empty() {
         Lock::Passphrase(input::new_passphrase(&name)?)
     } else {
-        Lock::Gpg { recipients: gpg }
+        Lock::Gpg {
+            recipients: recipients(gpg)?,
+        }
     };
     Profile {
         name,
@@ -59,6 +62,14 @@ pub fn create(store: &Store, name: ProfileName, gpg: Vec<String>) -> Result<()> 
         vars: Vars::default(),
     }
     .create(store)
+}
+
+fn recipients(gpg: Vec<GpgArg>) -> Result<Vec<String>> {
+    let resolve = |g| match g {
+        GpgArg::Key(key) => Ok(key),
+        GpgArg::Pick => pick::gpg_key(),
+    };
+    gpg.into_iter().map(resolve).collect()
 }
 
 pub fn set(

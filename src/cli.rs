@@ -31,9 +31,16 @@ pub enum Command {
         /// Name of the new profile
         #[arg(value_parser = parse::<ProfileName>)]
         profile: ProfileName,
-        /// Lock with this GPG key (repeatable); without it, lock with a passphrase
-        #[arg(long = "gpg", value_name = "KEY")]
-        gpg: Vec<String>,
+        /// Lock with this GPG key (repeatable); --gpg alone picks one of your secret keys;
+        /// without --gpg, lock with a passphrase
+        #[arg(
+            long = "gpg",
+            value_name = "KEY",
+            num_args = 0..=1,
+            default_missing_value = "",
+            value_parser = parse_gpg
+        )]
+        gpg: Vec<GpgArg>,
     },
     /// Add or change variables; values come from the terminal prompt or stdin
     Set {
@@ -149,6 +156,20 @@ fn parse<T: FromStr<Err = Error>>(s: &str) -> Result<T, String> {
     s.parse().map_err(|e: Error| e.to_string())
 }
 
+/// One `--gpg` occurrence: a key given by the user, or `--gpg` alone (pick in a menu).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GpgArg {
+    Pick,
+    Key(String),
+}
+
+fn parse_gpg(s: &str) -> Result<GpgArg, String> {
+    Ok(match s {
+        "" => GpgArg::Pick,
+        key => GpgArg::Key(key.to_string()),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,6 +178,25 @@ mod tests {
     #[test]
     fn definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn gpg_without_key_means_pick() {
+        let gpg = |args: &[&str]| match Cli::try_parse_from(args).unwrap().command {
+            Command::Create { gpg, .. } => gpg,
+            _ => panic!("not create"),
+        };
+        let key = |k: &str| GpgArg::Key(k.into());
+        assert_eq!(gpg(&["duckpond", "create", "P"]), []);
+        assert_eq!(gpg(&["duckpond", "create", "P", "--gpg"]), [GpgArg::Pick]);
+        assert_eq!(
+            gpg(&["duckpond", "create", "P", "--gpg", "k@x"]),
+            [key("k@x")]
+        );
+        assert_eq!(
+            gpg(&["duckpond", "create", "P", "--gpg", "--gpg=k@x"]),
+            [GpgArg::Pick, key("k@x")]
+        );
     }
 
     #[test]

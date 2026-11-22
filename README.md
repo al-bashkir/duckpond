@@ -40,6 +40,7 @@ splits a profile name that contains a space into two words; zsh keeps it as one 
 
 ```sh
 duckpond create work --gpg you@example.com   # GPG lock (no prompt if gpg-agent has the key)
+duckpond create work --gpg                   # pick one of your GPG secret keys in a menu
 duckpond create home                         # passphrase lock (asks twice)
 
 duckpond set work GITHUB_TOKEN               # asks for the value, hidden
@@ -62,6 +63,10 @@ duckpond export work -o out.env  # dotenv, mode 0600; --force to replace
 duckpond unset work OLD_VAR
 duckpond delete work             # asks; --yes when there is no terminal
 ```
+
+`--gpg` takes an optional value, so put it after the profile name: `create --gpg work`
+reads `work` as the key. The menu shows only keys that can encrypt (not expired, revoked
+or disabled), and the profile is locked to the fingerprint you choose.
 
 Without `init`, use `eval "$(duckpond load work)"`. `load` refuses to print to a terminal,
 so secrets do not land in your scrollback by mistake.

@@ -1,10 +1,12 @@
 //! Profile choice: completion candidates and the interactive picker.
 
+use std::fmt::Display;
 use std::io::IsTerminal;
 
 use clap_complete::engine::{ArgValueCandidates, CompletionCandidate};
 use inquire::InquireError;
 
+use crate::crypto;
 use crate::error::{Error, Result};
 use crate::name::ProfileName;
 use crate::store::Store;
@@ -33,16 +35,28 @@ pub fn profile(store: &Store, given: Option<ProfileName>) -> Result<ProfileName>
     if !interactive() {
         return Err("missing PROFILE".to_string().into());
     }
-    choose(store.list()?)
+    select("Profile", store.list()?, NO_PROFILES)
 }
 
-fn choose(names: Vec<ProfileName>) -> Result<ProfileName> {
-    if names.is_empty() {
-        return Err("no profiles; create one with: duckpond create NAME"
+const NO_PROFILES: &str = "no profiles; create one with: duckpond create NAME";
+
+/// Fingerprint of a GPG secret key chosen in the menu (`create --gpg` without KEY).
+pub fn gpg_key() -> Result<String> {
+    if !interactive() {
+        return Err("no terminal to pick a GPG key; use --gpg KEY"
             .to_string()
             .into());
     }
-    inquire::Select::new("Profile", names)
+    let keys = crypto::secret_keys()?;
+    let key = select("GPG key", keys, "no GPG secret key that can encrypt")?;
+    Ok(key.fingerprint)
+}
+
+fn select<T: Display>(prompt: &str, items: Vec<T>, empty: &str) -> Result<T> {
+    if items.is_empty() {
+        return Err(empty.to_string().into());
+    }
+    inquire::Select::new(prompt, items)
         .prompt()
         .map_err(|e| match e {
             InquireError::OperationCanceled | InquireError::OperationInterrupted => {
@@ -58,7 +72,9 @@ mod tests {
 
     #[test]
     fn empty_store_is_an_error() {
-        let err = choose(Vec::new()).unwrap_err().to_string();
+        let err = select::<ProfileName>("Profile", Vec::new(), NO_PROFILES)
+            .unwrap_err()
+            .to_string();
         assert_eq!(err, "no profiles; create one with: duckpond create NAME");
     }
 }
