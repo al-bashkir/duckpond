@@ -1,0 +1,169 @@
+use std::str::FromStr;
+
+use clap::{Parser, Subcommand, ValueEnum};
+
+use crate::error::Error;
+use crate::name::{ProfileName, VarName};
+use crate::vars::{Expiry, Shell};
+
+#[derive(Parser)]
+#[command(version, about = "Encrypted environment-variable profiles")]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Command,
+}
+
+#[derive(Subcommand)]
+pub enum Command {
+    /// List profiles, or show the variables of one profile
+    List {
+        /// Profile to show; without it, list all profile names
+        #[arg(value_parser = parse::<ProfileName>)]
+        profile: Option<ProfileName>,
+        /// Show values instead of ********
+        #[arg(long)]
+        reveal: bool,
+    },
+    /// Create an empty profile
+    Create {
+        /// Name of the new profile
+        #[arg(value_parser = parse::<ProfileName>)]
+        profile: ProfileName,
+        /// Lock with this GPG key (repeatable); without it, lock with a passphrase
+        #[arg(long = "gpg", value_name = "KEY")]
+        gpg: Vec<String>,
+    },
+    /// Add or change variables; values come from the terminal prompt or stdin
+    Set {
+        /// Profile to change
+        #[arg(value_parser = parse::<ProfileName>)]
+        profile: ProfileName,
+        /// Variables to set
+        #[arg(required = true, value_parser = parse::<VarName>)]
+        names: Vec<VarName>,
+        /// Comment text; an empty text removes the comment
+        #[arg(long, value_name = "TEXT")]
+        comment: Option<String>,
+        /// Expiry date YYYY-MM-DD, or "none" to remove it
+        #[arg(long, value_name = "DATE", value_parser = parse::<Expiry>)]
+        expires: Option<Expiry>,
+        /// Change only the comment and expiry; read no value
+        #[arg(long)]
+        keep_value: bool,
+    },
+    /// Remove variables from a profile
+    Unset {
+        /// Profile to change
+        #[arg(value_parser = parse::<ProfileName>)]
+        profile: ProfileName,
+        /// Variables to remove
+        #[arg(required = true, value_parser = parse::<VarName>)]
+        names: Vec<VarName>,
+    },
+    /// Delete a profile
+    Delete {
+        /// Profile to delete
+        #[arg(value_parser = parse::<ProfileName>)]
+        profile: ProfileName,
+        /// Delete without asking
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Merge variables from a dotenv file into a profile
+    Import {
+        /// Profile to change
+        #[arg(value_parser = parse::<ProfileName>)]
+        profile: ProfileName,
+        /// Dotenv file to read, or - for stdin
+        file: String,
+    },
+    /// Write the variables of a profile as dotenv
+    Export {
+        /// Profile to read
+        #[arg(value_parser = parse::<ProfileName>)]
+        profile: ProfileName,
+        /// Export only these variables
+        #[arg(value_parser = parse::<VarName>)]
+        names: Vec<VarName>,
+        /// Write to this file (mode 0600) instead of stdout
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<std::path::PathBuf>,
+        /// Overwrite an existing output file
+        #[arg(long, requires = "output")]
+        force: bool,
+    },
+    /// Print shell code that sets the variables of a profile
+    Load {
+        /// Profile to load
+        #[arg(value_parser = parse::<ProfileName>)]
+        profile: Option<ProfileName>,
+        /// Shell syntax of the output
+        #[arg(long, value_enum, default_value = "sh")]
+        shell: ShellArg,
+    },
+    /// Print shell code that unsets the variables of a profile
+    Unload {
+        /// Profile to unload
+        #[arg(value_parser = parse::<ProfileName>)]
+        profile: Option<ProfileName>,
+        /// Shell syntax of the output
+        #[arg(long, value_enum, default_value = "sh")]
+        shell: ShellArg,
+    },
+    /// Run a command with the variables of a profile
+    Launch {
+        /// Profile to use
+        #[arg(value_parser = parse::<ProfileName>)]
+        profile: Option<ProfileName>,
+        /// Command and arguments, after --
+        #[arg(last = true, required = true, value_name = "CMD")]
+        command: Vec<String>,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+pub enum ShellArg {
+    Sh,
+    Fish,
+}
+
+impl From<ShellArg> for Shell {
+    fn from(s: ShellArg) -> Shell {
+        match s {
+            ShellArg::Sh => Shell::Sh,
+            ShellArg::Fish => Shell::Fish,
+        }
+    }
+}
+
+/// Our `Error` is not a `std::error::Error`, so clap needs a `String` error.
+fn parse<T: FromStr<Err = Error>>(s: &str) -> Result<T, String> {
+    s.parse().map_err(|e: Error| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    #[test]
+    fn definition_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn launch_without_profile() {
+        let cli = Cli::try_parse_from(["duckpond", "launch", "--", "nvim", "-c", "x"]).unwrap();
+        let Command::Launch { profile, command } = cli.command else {
+            panic!("not launch");
+        };
+        assert!(profile.is_none());
+        assert_eq!(command, ["nvim", "-c", "x"]);
+    }
+
+    #[test]
+    fn launch_with_profile_and_no_command_fails() {
+        assert!(Cli::try_parse_from(["duckpond", "launch", "P"]).is_err());
+        assert!(Cli::try_parse_from(["duckpond", "launch", "P", "--"]).is_err());
+    }
+}

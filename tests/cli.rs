@@ -1,0 +1,410 @@
+//! Integration tests: run the built binary against a temp store.
+//! Every test sets DUCKPOND_DIR, HOME and GNUPGHOME to temp dirs; the real store and keyring are never used.
+
+use std::fs;
+use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+
+const PASS: &str = "correct horse battery";
+const SECRET: &str = "hunter2-value-xyz";
+
+struct Out {
+    code: i32,
+    stdout: String,
+    stderr: String,
+}
+
+struct Env {
+    root: tempfile::TempDir,
+    gnupg: PathBuf,
+    pass: Option<String>,
+}
+
+fn run(mut c: Command, stdin: &str) -> Out {
+    c.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = c.spawn().unwrap();
+    // The child may exit before it reads stdin; a broken pipe is fine.
+    let _ = child.stdin.take().unwrap().write_all(stdin.as_bytes());
+    let o = child.wait_with_output().unwrap();
+    Out {
+        code: o.status.code().unwrap_or(-1),
+        stdout: String::from_utf8(o.stdout).unwrap(),
+        stderr: String::from_utf8(o.stderr).unwrap(),
+    }
+}
+
+impl Env {
+    fn new() -> Env {
+        let root = tempfile::tempdir().unwrap();
+        for d in ["home", "cwd", "gnupg"] {
+            fs::create_dir(root.path().join(d)).unwrap();
+        }
+        let gnupg = root.path().join("gnupg");
+        fs::set_permissions(&gnupg, fs::Permissions::from_mode(0o700)).unwrap();
+        Env {
+            root,
+            gnupg,
+            pass: Some(PASS.into()),
+        }
+    }
+
+    fn store(&self) -> PathBuf {
+        self.root.path().join("store")
+    }
+
+    fn cwd(&self) -> PathBuf {
+        self.root.path().join("cwd")
+    }
+
+    fn command(&self, program: &str) -> Command {
+        let mut c = Command::new(program);
+        c.env_clear()
+            .env("PATH", std::env::var("PATH").unwrap())
+            .env("HOME", self.root.path().join("home"))
+            .env("DUCKPOND_DIR", self.store())
+            .env("GNUPGHOME", &self.gnupg)
+            .current_dir(self.cwd());
+        if let Some(p) = &self.pass {
+            c.env("DUCKPOND_PASSPHRASE", p);
+        }
+        c
+    }
+
+    fn run(&self, args: &[&str], stdin: &str) -> Out {
+        let mut c = self.command(env!("CARGO_BIN_EXE_duckpond"));
+        c.args(args);
+        run(c, stdin)
+    }
+
+    fn ok(&self, args: &[&str], stdin: &str) -> Out {
+        let o = self.run(args, stdin);
+        assert_eq!(o.code, 0, "{args:?} failed: {}", o.stderr);
+        o
+    }
+
+    /// Runtime error: exit 1, empty stdout, `duckpond: error:` on stderr, no secret text. Returns stderr.
+    fn fail(&self, args: &[&str], stdin: &str, secrets: &[&str]) -> String {
+        let o = self.run(args, stdin);
+        assert_eq!(o.code, 1, "{args:?}: {}", o.stderr);
+        assert_eq!(o.stdout, "", "{args:?}");
+        assert!(o.stderr.starts_with("duckpond: error:"), "{}", o.stderr);
+        for s in secrets {
+            assert!(!o.stderr.contains(s), "{args:?} leaked {s}: {}", o.stderr);
+        }
+        o.stderr
+    }
+
+    fn profile_file(&self, name: &str) -> PathBuf {
+        self.store().join(format!("{name}.enc"))
+    }
+}
+
+fn mode(p: &std::path::Path) -> u32 {
+    fs::metadata(p).unwrap().permissions().mode() & 0o777
+}
+
+fn contains(hay: &[u8], needle: &str) -> bool {
+    hay.windows(needle.len()).any(|w| w == needle.as_bytes())
+}
+
+#[test]
+fn lifecycle_with_spaces_in_name() {
+    let e = Env::new();
+    let p = "Fresh DB1.TEST.LOCAL";
+    assert_eq!(e.ok(&["list"], "").stdout, "");
+    e.ok(&["create", p], "");
+    assert_eq!(e.ok(&["list"], "").stdout, format!("{p}\n"));
+    e.ok(&["set", p, "TOKEN"], &format!("{SECRET}\n"));
+    let masked = e.ok(&["list", p], "").stdout;
+    assert_eq!(masked, "NAME   VALUE\nTOKEN  ********\n");
+    let shown = e.ok(&["list", p, "--reveal"], "").stdout;
+    assert_eq!(shown, format!("NAME   VALUE\nTOKEN  {SECRET}\n"));
+    e.ok(&["unset", p, "TOKEN"], "");
+    assert_eq!(e.ok(&["list", p], "").stdout, "NAME  VALUE\n");
+    e.ok(&["delete", p, "--yes"], "");
+    assert_eq!(e.ok(&["list"], "").stdout, "");
+}
+
+#[test]
+fn files_are_private_and_hold_no_plaintext() {
+    let e = Env::new();
+    e.ok(&["create", "P"], "");
+    e.ok(&["set", "P", "TOKEN"], SECRET);
+    assert_eq!(mode(&e.store()), 0o700);
+    assert_eq!(mode(&e.profile_file("P")), 0o600);
+    let bytes = fs::read(e.profile_file("P")).unwrap();
+    assert!(bytes.starts_with(b"age-encryption.org/v1"));
+    assert!(!contains(&bytes, SECRET));
+    assert!(!contains(&bytes, PASS));
+}
+
+#[test]
+fn errors_are_clean() {
+    let mut e = Env::new();
+    let leak = [SECRET, PASS, "wrong passphrase!"];
+    e.ok(&["create", "P"], "");
+    e.ok(&["set", "P", "TOKEN"], SECRET);
+    let before = fs::read(e.profile_file("P")).unwrap();
+
+    let err = e.fail(&["create", "P"], "", &leak);
+    assert!(err.contains("already exists"), "{err}");
+    e.fail(&["list", "nope"], "", &leak);
+    e.fail(&["load", "nope"], "", &leak);
+    e.fail(&["set", "nope", "A"], SECRET, &leak);
+
+    // Names are checked by clap, before any file is touched.
+    for bad in ["../x", "a/b", ".hidden", "-x"] {
+        for cmd in ["create", "delete", "list"] {
+            let o = e.run(&[cmd, bad], "");
+            assert_ne!(o.code, 0, "{cmd} {bad}");
+            assert_eq!(o.stdout, "");
+        }
+    }
+    assert!(!e.root.path().join("x.enc").exists());
+    assert!(!e.store().join("a").exists());
+    assert_eq!(fs::read_dir(e.store()).unwrap().count(), 1);
+
+    let o = e.run(&["set", "P", "1X"], SECRET);
+    assert_ne!(o.code, 0);
+    assert!(o.stderr.contains("variable name"), "{}", o.stderr);
+
+    let err = e.fail(&["unset", "P", "NOPE"], "", &leak);
+    assert!(err.contains("NOPE"), "{err}");
+    assert_eq!(fs::read(e.profile_file("P")).unwrap(), before);
+
+    e.fail(&["set", "P", "A", "B"], SECRET, &leak);
+    e.fail(&["set", "P", "NOPE", "--keep-value"], "", &leak);
+    assert_eq!(fs::read(e.profile_file("P")).unwrap(), before);
+
+    for args in [&["load"][..], &["unload"], &["launch", "--", "true"]] {
+        let err = e.fail(args, "", &leak);
+        assert!(err.contains("missing PROFILE"), "{err}");
+    }
+
+    let err = e.fail(&["delete", "P"], "", &leak);
+    assert!(err.contains("--yes"), "{err}");
+    assert!(e.profile_file("P").exists());
+
+    e.pass = Some("wrong passphrase!".into());
+    for args in [&["list", "P"][..], &["load", "P"], &["export", "P"]] {
+        e.fail(args, "", &leak);
+    }
+    assert_eq!(fs::read(e.profile_file("P")).unwrap(), before);
+}
+
+#[test]
+fn comment_expiry_keep_value_and_expired_warning() {
+    let e = Env::new();
+    e.ok(&["create", "P"], "");
+    let a = [
+        "set",
+        "P",
+        "A",
+        "--comment",
+        "hello",
+        "--expires",
+        "2000-01-01",
+    ];
+    e.ok(&a, SECRET);
+
+    let o = e.ok(&["list", "P"], "");
+    assert!(o.stdout.contains("2000-01-01 (expired)"), "{}", o.stdout);
+    assert!(o.stdout.contains("hello"), "{}", o.stdout);
+    assert!(o.stderr.starts_with("duckpond: warning:"), "{}", o.stderr);
+    assert!(o.stderr.contains("A") && o.stderr.contains("2000-01-01"));
+    assert!(!o.stderr.contains(SECRET));
+
+    let o = e.ok(&["load", "P"], "");
+    assert_eq!(o.stdout, format!("export A='{SECRET}'\n"));
+    assert!(o.stderr.starts_with("duckpond: warning:"), "{}", o.stderr);
+    assert!(!o.stderr.contains(SECRET));
+
+    // --keep-value reads no value (stdin is empty) and keeps the old one.
+    e.ok(&["set", "P", "A", "--keep-value", "--comment", "new"], "");
+    let o = e.ok(&["list", "P", "--reveal"], "");
+    assert!(o.stdout.contains(SECRET) && o.stdout.contains("new"));
+    assert!(o.stdout.contains("2000-01-01 (expired)"), "kept expiry");
+
+    e.ok(&["set", "P", "A", "--keep-value", "--expires", "none"], "");
+    let o = e.ok(&["load", "P"], "");
+    assert_eq!(o.stderr, "");
+    let o = e.ok(&["list", "P"], "");
+    assert!(!o.stdout.contains("EXPIRES") && o.stdout.contains("new"));
+}
+
+#[test]
+fn import_export_round_trip() {
+    let e = Env::new();
+    e.ok(&["create", "P"], "");
+    let text = "# comment\n\nA=plain\nexport B=it's \"q\"=x\n  C=\n";
+    let file = e.cwd().join("in.env");
+    fs::write(&file, text).unwrap();
+    e.ok(&["import", "P", file.to_str().unwrap()], "");
+    e.ok(&["import", "P", "-"], "D=from stdin\nA=over\n");
+
+    let all = "A=over\nB=it's \"q\"=x\nC=\nD=from stdin\n";
+    assert_eq!(e.ok(&["export", "P"], "").stdout, all);
+    assert_eq!(
+        e.ok(&["export", "P", "D", "B"], "").stdout,
+        "B=it's \"q\"=x\nD=from stdin\n"
+    );
+
+    let out = e.cwd().join("out.env");
+    let o = out.to_str().unwrap();
+    let o1 = e.ok(&["export", "P", "-o", o], "");
+    assert_eq!(o1.stdout, "");
+    assert_eq!(fs::read_to_string(&out).unwrap(), all);
+    assert_eq!(mode(&out), 0o600);
+    let err = e.fail(&["export", "P", "-o", o], "", &[]);
+    assert!(err.contains("--force"), "{err}");
+    e.ok(&["export", "P", "A", "-o", o, "--force"], "");
+    assert_eq!(fs::read_to_string(&out).unwrap(), "A=over\n");
+
+    // A bad line fails with its number and changes nothing.
+    let before = fs::read(e.profile_file("P")).unwrap();
+    let err = e.fail(&["import", "P", "-"], "OK=1\nnot a pair\n", &[]);
+    assert!(err.contains("line 2"), "{err}");
+    assert_eq!(fs::read(e.profile_file("P")).unwrap(), before);
+    e.fail(&["import", "P", "/nonexistent/x.env"], "", &[]);
+
+    // A value with a newline cannot be exported.
+    e.ok(&["set", "P", "NL"], "a\nb");
+    let err = e.fail(&["export", "P"], "", &["a\nb"]);
+    assert!(err.contains("NL"), "{err}");
+}
+
+#[test]
+fn load_and_unload_text() {
+    let e = Env::new();
+    e.ok(&["create", "P"], "");
+    e.ok(&["import", "P", "-"], "A=plain\nB=it's\nC=back\\slash\n");
+    let sh = "export A='plain'\nexport B='it'\\''s'\nexport C='back\\slash'\n";
+    let fish = "set -gx A 'plain'\nset -gx B 'it\\'s'\nset -gx C 'back\\\\slash'\n";
+    assert_eq!(e.ok(&["load", "P"], "").stdout, sh);
+    assert_eq!(e.ok(&["load", "P", "--shell", "sh"], "").stdout, sh);
+    assert_eq!(e.ok(&["load", "P", "--shell", "fish"], "").stdout, fish);
+    assert_eq!(
+        e.ok(&["unload", "P"], "").stdout,
+        "unset A\nunset B\nunset C\n"
+    );
+    let o = e.ok(&["unload", "P", "--shell", "fish"], "");
+    assert_eq!(o.stdout, "set -e A\nset -e B\nset -e C\n");
+    assert_ne!(e.run(&["load", "P", "--shell", "csh"], "").code, 0);
+}
+
+fn have(program: &str) -> bool {
+    Command::new(program)
+        .arg("--version")
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+#[test]
+fn shell_eval_is_injection_safe() {
+    let e = Env::new();
+    let value = "it's \"q\" $(touch PWNED) `touch PWNED` line1\nline2";
+    e.ok(&["create", "P"], "");
+    e.ok(&["set", "P", "V"], value);
+    let script = r#"eval "$("$DP" load P)"; printf %s "$V"; printf '\0'; eval "$("$DP" unload P)"; printf %s "${V-unset}""#;
+    let mut ran = 0;
+    for shell in ["zsh", "bash"] {
+        if !have(shell) {
+            eprintln!("skip {shell}: not installed");
+            continue;
+        }
+        ran += 1;
+        let mut c = e.command(shell);
+        c.env("DP", env!("CARGO_BIN_EXE_duckpond"))
+            .args(["-c", script]);
+        let o = run(c, "");
+        assert_eq!(o.code, 0, "{shell}: {}", o.stderr);
+        assert_eq!(o.stdout, format!("{value}\0unset"), "{shell}");
+        assert!(!e.cwd().join("PWNED").exists(), "{shell} ran injected code");
+    }
+    if ran == 0 {
+        eprintln!("no shell available, test skipped");
+    }
+}
+
+#[test]
+fn launch_runs_with_vars_and_propagates_exit() {
+    let e = Env::new();
+    let value = "it's \"q\" $HOME\nline2";
+    e.ok(&["create", "P"], "");
+    e.ok(&["set", "P", "V"], value);
+
+    let show = r#"printf %s "$V"; printf '\0'; printf %s "${DUCKPOND_PASSPHRASE-unset}""#;
+    let o = e.ok(&["launch", "P", "--", "sh", "-c", show], "");
+    assert_eq!(o.stdout, format!("{value}\0unset"));
+
+    let o = e.run(&["launch", "P", "--", "sh", "-c", "exit 7"], "");
+    assert_eq!(o.code, 7);
+
+    let err = e.fail(&["launch", "P", "--", "/nonexistent/cmd"], "", &[value]);
+    assert!(err.contains("cannot run /nonexistent/cmd:"), "{err}");
+}
+
+#[test]
+fn gpg_lock_round_trip() {
+    if !have("gpg") {
+        eprintln!("skip gpg test: gpg not installed");
+        return;
+    }
+    // Short path: gpg-agent sockets live in GNUPGHOME and have a length limit.
+    let home = tempfile::Builder::new()
+        .prefix("dp-gpg")
+        .tempdir_in("/tmp")
+        .unwrap();
+    fs::set_permissions(home.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    let mut e = Env::new();
+    e.gnupg = home.path().to_path_buf();
+    e.pass = None;
+
+    let gen_args = [
+        "--batch",
+        "--passphrase",
+        "",
+        "--quick-gen-key",
+        "duckpond test <t@example.invalid>",
+        "default",
+        "default",
+        "never",
+    ];
+    let mut keygen = e.command("gpg");
+    keygen.args(gen_args);
+    let g = run(keygen, "");
+    assert_eq!(g.code, 0, "gpg keygen: {}", g.stderr);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        e.ok(&["create", "P", "--gpg", "t@example.invalid"], "");
+        e.ok(&["set", "P", "V"], SECRET);
+        let o = e.ok(&["list", "P", "--reveal"], "");
+        assert!(o.stdout.contains(SECRET), "{}", o.stdout);
+        // The second write re-encrypts to the recipients found while decrypting.
+        e.ok(&["set", "P", "W"], "second");
+        let o = e.ok(&["load", "P"], "");
+        assert_eq!(
+            o.stdout,
+            format!("export V='{SECRET}'\nexport W='second'\n")
+        );
+        let bytes = fs::read(e.profile_file("P")).unwrap();
+        assert!(!bytes.starts_with(b"age-encryption.org"));
+    }));
+
+    let mut kill = e.command("gpgconf");
+    kill.args(["--kill", "gpg-agent"]);
+    run(kill, "");
+    if let Err(p) = result {
+        std::panic::resume_unwind(p);
+    }
+}
+
+#[test]
+fn version() {
+    let e = Env::new();
+    assert_eq!(e.ok(&["--version"], "").stdout, "duckpond 0.1.0\n");
+}
