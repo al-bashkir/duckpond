@@ -32,9 +32,18 @@ pub fn decrypt(
     gpg_decrypt(cipher)
 }
 
+// Fixed scrypt cost, as in Go age. age's default calibrates by timing on each run,
+// so a file made on an idle machine could fail "excessive work" on a busy or slow one.
+const WORK_FACTOR: u8 = 18;
+const MAX_WORK_FACTOR: u8 = 22;
+
 fn age_encrypt(passphrase: SecretString, plain: &[u8]) -> Result<Vec<u8>> {
+    let mut recipient = age::scrypt::Recipient::new(passphrase);
+    recipient.set_work_factor(WORK_FACTOR);
+    let encryptor = age::Encryptor::with_recipients(std::iter::once(&recipient as _))
+        .map_err(|e| format!("cannot encrypt: {e}"))?;
     let mut out = Vec::new();
-    let mut w = age::Encryptor::with_user_passphrase(passphrase).wrap_output(&mut out)?;
+    let mut w = encryptor.wrap_output(&mut out)?;
     w.write_all(plain)?;
     w.finish()?;
     Ok(out)
@@ -50,7 +59,8 @@ fn age_check(cipher: &[u8]) -> Result<()> {
 
 fn age_decrypt(passphrase: SecretString, cipher: &[u8]) -> Result<Vec<u8>> {
     let d = age::Decryptor::new_buffered(cipher).map_err(|e| format!("bad age file: {e}"))?;
-    let id = age::scrypt::Identity::new(passphrase);
+    let mut id = age::scrypt::Identity::new(passphrase);
+    id.set_max_work_factor(MAX_WORK_FACTOR);
     let mut r = d
         .decrypt(std::iter::once(&id as &dyn age::Identity))
         .map_err(|e| format!("cannot decrypt: {e}"))?;
@@ -142,6 +152,17 @@ mod tests {
 
     fn open(cipher: &[u8], p: &str) -> Result<(Vec<u8>, Lock)> {
         decrypt(cipher, || Ok(SecretString::from(p)))
+    }
+
+    #[test]
+    fn age_work_factor_is_fixed_not_calibrated() {
+        let cipher = encrypt(&pass("correct horse"), b"x").unwrap();
+        let stanza = cipher.split(|b| *b == b'\n').nth(1).unwrap();
+        let stanza = String::from_utf8_lossy(stanza);
+        assert!(
+            stanza.starts_with("-> scrypt ") && stanza.ends_with(" 18"),
+            "{stanza}"
+        );
     }
 
     #[test]
