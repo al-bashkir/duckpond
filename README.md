@@ -1,7 +1,20 @@
-# duckpond
+<h1 align="center">duckpond</h1>
+
+<p align="center"><img src="assets/duckpond-wishes-and-secret-variables.svg" alt="A duck grants wishes. The last wish is: I wish I could keep my ENV variables secret." width="600"></p>
+
+<p align="center">Encrypted environment-variable profiles for Linux and macOS, written in Rust.</p>
+
+> [!NOTE]
+> AI disclosure: the code, the tests and the documentation of duckpond were written with Claude Opus, an AI model from Anthropic. Read the [Security notes](#security-notes) before you keep secrets that matter in it.
 
 Keep environment variables in encrypted profiles. Load them into your shell, or run a
 command with them, only when you need them.
+
+## Why this project exists
+
+duckpond exists because the other tools did not offer the features that its author needed.
+It was written mainly for personal use. The code is public in case it is useful to someone
+else too.
 
 ## Install
 
@@ -117,23 +130,13 @@ so secrets do not land in your scrollback by mistake.
 - Dotenv import/export is raw `NAME=value` per line (Docker `--env-file` rules: no quote
   removal). Export refuses values that contain line breaks.
 
-## Release
-
-CI (fmt, clippy, tests, `cargo audit`) runs on every push that changes `src/`, `tests/`,
-`Cargo.toml`, `Cargo.lock`, `.cargo/` or a workflow. Dependabot opens weekly pull requests for
-GitHub Actions and crate updates. To release, set the new version in `Cargo.toml`, commit, then push a tag with
-the same version:
-
-```sh
-git tag v0.2.0 && git push origin v0.2.0
-```
-
-The release workflow runs CI again, stops if the tag and `Cargo.toml` differ, builds the
-binaries and publishes them with `SHA256SUMS` as a GitHub release.
-
 ## Glossary
 
 - **profile**: a named, encrypted set of variables. One file in the store.
 - **variable**: a name with a value, and an optional comment and expiry date.
 - **lock**: how a profile is encrypted. `gpg` (to one or more keys) or `passphrase` (age).
 - **store**: the directory that holds the profile files.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
