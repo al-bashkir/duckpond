@@ -11,6 +11,7 @@ on:
       - "Cargo.lock"
       - ".cargo/**"
       - ".github/workflows/ci.yml"
+      - ".github/workflows/release.yml" # action updates reach a check before the next tag
   workflow_call: # release.yml runs the same checks before it builds
 
 permissions:

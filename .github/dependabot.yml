@@ -1,0 +1,19 @@
+# Weekly update pull requests, at most one per ecosystem (groups).
+# github-actions moves the pinned SHAs in .github/workflows (and their # vX.Y.Z comments);
+# cargo updates Cargo.lock, and Cargo.toml for a new major version.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]

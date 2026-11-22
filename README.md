@@ -101,8 +101,9 @@ so secrets do not land in your scrollback by mistake.
 
 ## Release
 
-CI (fmt, clippy, tests) runs on every push that changes `src/`, `tests/`, `Cargo.toml` or
-`Cargo.lock`. To release, set the new version in `Cargo.toml`, commit, then push a tag with
+CI (fmt, clippy, tests, `cargo audit`) runs on every push that changes `src/`, `tests/`,
+`Cargo.toml`, `Cargo.lock`, `.cargo/` or a workflow. Dependabot opens weekly pull requests for
+GitHub Actions and crate updates. To release, set the new version in `Cargo.toml`, commit, then push a tag with
 the same version:
 
 ```sh
