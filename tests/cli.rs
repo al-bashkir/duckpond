@@ -590,6 +590,31 @@ fn completion_lists_profile_names_without_a_passphrase() {
     }
 }
 
+/// Without `-o filenames`, bash inserts a file candidate unquoted: a name such as
+/// `out.env;touch X` in a shared directory becomes code on the command line.
+#[test]
+fn bash_completion_quotes_file_names() {
+    let e = Env::new();
+    let script = e.ok(&["init", "bash"], "").stdout;
+    let completes: Vec<&str> = script
+        .lines()
+        .filter(|l| l.trim_start().starts_with("complete "))
+        .collect();
+    assert!(!completes.is_empty(), "{script}");
+    for line in completes {
+        assert!(line.contains(" -o filenames "), "{line}");
+    }
+    if usable("bash") {
+        let o = run_in_shell(
+            &e,
+            "bash",
+            r#"eval "$(duckpond init bash)"; complete -p duckpond"#,
+        );
+        assert_eq!(o.code, 0, "{}", o.stderr);
+        assert!(o.stdout.contains("-o filenames"), "{}", o.stdout);
+    }
+}
+
 #[test]
 fn init_prints_one_script_per_shell() {
     let e = Env::new();

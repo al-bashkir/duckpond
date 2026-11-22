@@ -36,8 +36,7 @@ This gives you:
   name, they open a picker (type to filter).
 - Tab completion of commands, flags and profile names.
 
-Tested with zsh and bash. The fish script has not been run yet. In bash, `duckpond <TAB>`
-splits a profile name that contains a space into two words; zsh keeps it as one word.
+Tested with zsh and bash. The fish script has not been run yet.
 
 ## Usage
 

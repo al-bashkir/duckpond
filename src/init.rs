@@ -70,7 +70,11 @@ fn registration(shell: &dyn EnvCompleter) -> Result<String> {
 
 pub fn script(shell: InitShell) -> Result<String> {
     Ok(match shell {
-        InitShell::Bash => format!("{BASH_ZSH_WRAPPER}{}", registration(&Bash)?),
+        // clap_complete's bash registration inserts candidates as is; -o filenames makes bash quote them.
+        InitShell::Bash => format!(
+            "{BASH_ZSH_WRAPPER}{}",
+            registration(&Bash)?.replace("complete -o ", "complete -o filenames -o ")
+        ),
         InitShell::Zsh => format!(
             "{BASH_ZSH_WRAPPER}{ZSH_COMPDEF_OPEN}{}{ZSH_COMPDEF_CLOSE}",
             registration(&Zsh)?
