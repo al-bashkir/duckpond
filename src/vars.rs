@@ -115,7 +115,10 @@ fn parse_line(line: &str) -> Result<Option<(VarName, String)>> {
     }
     let line = line.strip_prefix("export ").unwrap_or(line);
     let (name, value) = line.split_once('=').ok_or("missing '='".to_string())?;
-    let name: VarName = name.parse()?;
+    // Do not echo the text: in a malformed file it can be a piece of a secret.
+    let name: VarName = name
+        .parse()
+        .map_err(|_| "invalid variable name, use [A-Za-z_][A-Za-z0-9_]*".to_string())?;
     check_nul(&name, value)?;
     Ok(Some((name, value.to_string())))
 }
@@ -444,9 +447,14 @@ mod tests {
         assert!(msg.contains("line 2") && msg.contains('='), "{msg}");
         let msg = err(parse_dotenv("A=1\n\n1BAD=secret"));
         assert!(
-            msg.contains("line 3") && msg.contains("1BAD") && !msg.contains("secret"),
+            msg.contains("line 3")
+                && msg.contains("invalid variable name")
+                && !msg.contains("secret"),
             "{msg}"
         );
+        // A base64 continuation line of a multi-line secret must not be echoed.
+        let msg = err(parse_dotenv("A=1\nab+cd/ef=="));
+        assert!(msg.contains("line 2") && !msg.contains("ab+cd"), "{msg}");
         let msg = err(parse_dotenv("A=se\0cret"));
         assert!(
             msg.contains("line 1") && msg.contains("NUL") && !msg.contains("se"),
