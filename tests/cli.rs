@@ -385,6 +385,26 @@ fn load_refuses_arithmetic_in_shell_integer_names() {
     );
 }
 
+/// Errors carry names from the command line (a glob can pass a crafted file name): the
+/// terminal must not act on control characters in them, and a line feed must not start a fake line.
+#[test]
+fn errors_escape_control_characters() {
+    let e = Env::new();
+    e.ok(&["create", "P"], "");
+    let name = "x\u{1b}]0;T\u{7}\r\u{9b}2J\nduckpond: done";
+    fs::write(e.cwd().join(name), "").unwrap();
+    let missing = format!("missing{name}");
+    for args in [
+        &["import", "P", &missing][..],
+        &["launch", "P", "--", name],
+        &["export", "P", "-o", name],
+    ] {
+        let err = e.fail(args, "", &["\u{1b}", "\u{7}", "\r", "\u{9b}"]);
+        assert_eq!(err.lines().count(), 1, "{err}");
+        assert!(err.contains("x\\u{1b}]0;T"), "{err}");
+    }
+}
+
 #[test]
 fn launch_runs_with_vars_and_propagates_exit() {
     let e = Env::new();

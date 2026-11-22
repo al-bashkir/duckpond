@@ -238,7 +238,8 @@ pub fn expired(vars: &Vars, today: NaiveDate) -> Vec<(&VarName, NaiveDate)> {
     dated.filter(|(_, d)| *d < today).collect()
 }
 
-fn escape(s: &str) -> String {
+/// Control characters as Rust escapes, for text that reaches a terminal.
+pub fn escape(s: &str) -> String {
     let one = |c: char| match c {
         '\n' | '\r' | '\t' => c.escape_default().to_string(),
         c if c.is_control() => c.escape_unicode().to_string(),
