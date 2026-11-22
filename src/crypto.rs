@@ -1,0 +1,214 @@
+use std::io::{Read, Write};
+use std::process::{Command, Stdio};
+
+use age::secrecy::SecretString;
+
+use crate::error::Result;
+
+const AGE_MAGIC: &[u8] = b"age-encryption.org/v1\n";
+
+#[derive(Debug, Clone)]
+pub enum Lock {
+    Gpg { recipients: Vec<String> },
+    Passphrase(SecretString),
+}
+
+pub fn encrypt(lock: &Lock, plain: &[u8]) -> Result<Vec<u8>> {
+    match lock {
+        Lock::Passphrase(p) => age_encrypt(p.clone(), plain),
+        Lock::Gpg { recipients } => gpg_encrypt(recipients, plain),
+    }
+}
+
+pub fn decrypt(
+    cipher: &[u8],
+    passphrase: impl FnOnce() -> Result<SecretString>,
+) -> Result<(Vec<u8>, Lock)> {
+    if cipher.starts_with(AGE_MAGIC) {
+        let p = age_check(cipher).and_then(|()| passphrase())?;
+        let plain = age_decrypt(p.clone(), cipher)?;
+        return Ok((plain, Lock::Passphrase(p)));
+    }
+    gpg_decrypt(cipher)
+}
+
+fn age_encrypt(passphrase: SecretString, plain: &[u8]) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    let mut w = age::Encryptor::with_user_passphrase(passphrase).wrap_output(&mut out)?;
+    w.write_all(plain)?;
+    w.finish()?;
+    Ok(out)
+}
+
+fn age_check(cipher: &[u8]) -> Result<()> {
+    let d = age::Decryptor::new_buffered(cipher).map_err(|e| format!("bad age file: {e}"))?;
+    if d.is_scrypt() {
+        return Ok(());
+    }
+    Err("only passphrase age files are supported".to_string().into())
+}
+
+fn age_decrypt(passphrase: SecretString, cipher: &[u8]) -> Result<Vec<u8>> {
+    let d = age::Decryptor::new_buffered(cipher).map_err(|e| format!("bad age file: {e}"))?;
+    let id = age::scrypt::Identity::new(passphrase);
+    let mut r = d
+        .decrypt(std::iter::once(&id as &dyn age::Identity))
+        .map_err(|e| format!("cannot decrypt: {e}"))?;
+    let mut plain = Vec::new();
+    r.read_to_end(&mut plain)
+        .map_err(|e| format!("cannot decrypt: {e}"))?;
+    Ok(plain)
+}
+
+fn gpg_encrypt(recipients: &[String], plain: &[u8]) -> Result<Vec<u8>> {
+    if recipients.is_empty() {
+        return Err("no gpg recipients".to_string().into());
+    }
+    let mut args = vec!["--batch", "--quiet", "--yes", "--encrypt"];
+    for r in recipients {
+        args.extend(["--recipient", r]);
+    }
+    Ok(run_gpg(&args, plain)?.0)
+}
+
+fn gpg_decrypt(cipher: &[u8]) -> Result<(Vec<u8>, Lock)> {
+    let args = ["--batch", "--quiet", "--status-fd", "2", "--decrypt"];
+    let (plain, stderr) = run_gpg(&args, cipher)?;
+    let recipients = parse_enc_to(&stderr);
+    if recipients.is_empty() {
+        return Err("cannot find the gpg recipients of this profile"
+            .to_string()
+            .into());
+    }
+    Ok((plain, Lock::Gpg { recipients }))
+}
+
+/// Runs gpg with `input` on stdin. Returns (stdout, stderr) on success.
+fn run_gpg(args: &[&str], input: &[u8]) -> Result<(Vec<u8>, String)> {
+    let mut child = Command::new("gpg")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => "gpg not found".to_string(),
+            _ => format!("cannot run gpg: {e}"),
+        })?;
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    let out = std::thread::scope(|s| {
+        // Write from a thread so a full pipe cannot deadlock; EPIPE is fine (gpg exited early).
+        s.spawn(move || {
+            let _ = stdin.write_all(input);
+        });
+        child.wait_with_output()
+    })?;
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    if !out.status.success() {
+        return Err(format!("gpg failed: {}", gpg_message(&stderr)).into());
+    }
+    Ok((out.stdout, stderr))
+}
+
+fn gpg_message(stderr: &str) -> String {
+    let lines: Vec<&str> = stderr
+        .lines()
+        .filter(|l| !l.starts_with("[GNUPG:]"))
+        .collect();
+    lines.join("\n").trim().to_string()
+}
+
+pub fn parse_enc_to(stderr: &str) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    for line in stderr.lines() {
+        let Some(rest) = line.strip_prefix("[GNUPG:] ENC_TO ") else {
+            continue;
+        };
+        let id = rest.split_whitespace().next();
+        if let Some(id) = id.filter(|id| !ids.iter().any(|i| i == id)) {
+            ids.push(id.to_string());
+        }
+    }
+    ids
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pass(s: &str) -> Lock {
+        Lock::Passphrase(SecretString::from(s))
+    }
+
+    fn open(cipher: &[u8], p: &str) -> Result<(Vec<u8>, Lock)> {
+        decrypt(cipher, || Ok(SecretString::from(p)))
+    }
+
+    #[test]
+    fn age_round_trip() {
+        let cipher = encrypt(&pass("correct horse"), b"hello").unwrap();
+        assert!(cipher.starts_with(b"age-encryption.org/v1\n"));
+        let (plain, lock) = open(&cipher, "correct horse").unwrap();
+        assert_eq!(plain, b"hello");
+        assert!(matches!(lock, Lock::Passphrase(_)));
+    }
+
+    #[test]
+    fn age_wrong_passphrase_errs() {
+        let cipher = encrypt(&pass("correct horse"), b"hello").unwrap();
+        assert!(open(&cipher, "wrong").is_err());
+    }
+
+    #[test]
+    fn age_garbage_and_truncated_err() {
+        let cipher = encrypt(&pass("correct horse"), b"hello").unwrap();
+        for n in [22, 40, cipher.len() - 1] {
+            assert!(open(&cipher[..n], "correct horse").is_err(), "cut at {n}");
+        }
+        let mut junk = b"age-encryption.org/v1\n".to_vec();
+        junk.extend_from_slice(b"-> scrypt !!! x\nzzzz\n--- AAAA\n\xff\xfe");
+        assert!(open(&junk, "x").is_err());
+        assert!(open(AGE_MAGIC, "x").is_err());
+    }
+
+    #[test]
+    fn age_error_does_not_echo_passphrase() {
+        let cipher = encrypt(&pass("correct horse"), b"hello").unwrap();
+        let msg = open(&cipher, "s3cretvalue").unwrap_err().to_string();
+        assert!(!msg.contains("s3cretvalue"), "{msg}");
+    }
+
+    #[test]
+    fn age_non_scrypt_file_is_rejected_without_prompt() {
+        use age::x25519::Identity;
+        let key = Identity::generate();
+        let cipher = age::encrypt(&key.to_public(), b"x").unwrap();
+        let err = decrypt(&cipher, || panic!("must not prompt")).unwrap_err();
+        assert_eq!(err.to_string(), "only passphrase age files are supported");
+    }
+
+    #[test]
+    fn gpg_encrypt_needs_a_recipient() {
+        let err = encrypt(&Lock::Gpg { recipients: vec![] }, b"x").unwrap_err();
+        assert_eq!(err.to_string(), "no gpg recipients");
+    }
+
+    #[test]
+    fn gpg_message_drops_status_lines() {
+        let s = "[GNUPG:] NO_SECKEY AB\ngpg: decryption failed: No secret key \n[GNUPG:] X\n";
+        assert_eq!(gpg_message(s), "gpg: decryption failed: No secret key");
+    }
+
+    #[test]
+    fn enc_to_cases() {
+        assert!(parse_enc_to("").is_empty());
+        assert!(parse_enc_to("gpg: noise\n[GNUPG:] DECRYPTION_OKAY\n").is_empty());
+        assert_eq!(parse_enc_to("[GNUPG:] ENC_TO AAAA 1 0\n"), ["AAAA"]);
+        let two = "[GNUPG:] ENC_TO BBBB 1 0\n[GNUPG:] ENC_TO AAAA 18 0\n";
+        assert_eq!(parse_enc_to(two), ["BBBB", "AAAA"]);
+        let dup = "[GNUPG:] ENC_TO AAAA 1 0\ngpg: x\n[GNUPG:] ENC_TO BBBB 1 0\n[GNUPG:] ENC_TO AAAA 1 0\n";
+        assert_eq!(parse_enc_to(dup), ["AAAA", "BBBB"]);
+        assert!(parse_enc_to("[GNUPG:] ENC_TO\n").is_empty());
+        assert!(parse_enc_to("[GNUPG:] ENC_TO \n").is_empty());
+    }
+}
