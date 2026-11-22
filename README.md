@@ -11,6 +11,13 @@ cargo install --path .
 
 Needs `gpg` on `PATH` for GPG profiles. Linux and macOS.
 
+With a terminal pinentry (curses or tty), gpg must know your terminal, else it fails with
+`Inappropriate ioctl for device`. Put this in your shell rc (a GUI pinentry does not need it):
+
+```sh
+export GPG_TTY=$(tty)
+```
+
 ## Shell setup
 
 Add this to your shell rc file. For zsh, put it after `compinit`.
@@ -25,6 +32,9 @@ This gives you:
 - `duckpond load` and `duckpond unload` that change the current shell. Without a profile
   name, they open a picker (type to filter).
 - Tab completion of commands, flags and profile names.
+
+Tested with zsh and bash. The fish script has not been run yet. In bash, `duckpond <TAB>`
+splits a profile name that contains a space into two words; zsh keeps it as one word.
 
 ## Usage
 
