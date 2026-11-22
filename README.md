@@ -19,6 +19,12 @@ else too.
 ## Install
 
 ```sh
+brew install al-bashkir/tools/duckpond
+```
+
+Or build from source:
+
+```sh
 cargo install --locked --path .
 ```
 
