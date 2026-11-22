@@ -6,8 +6,11 @@ command with them, only when you need them.
 ## Install
 
 ```sh
-cargo install --path .
+cargo install --locked --path .
 ```
+
+`--locked` builds the dependency versions in `Cargo.lock`, which CI tests and `cargo audit`
+checks. Without it, cargo takes the newest compatible versions.
 
 Or download a binary from the GitHub releases (Linux x86_64 static, macOS arm64) and check
 it against `SHA256SUMS`.
