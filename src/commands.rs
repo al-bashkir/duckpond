@@ -10,6 +10,7 @@ use crate::crypto::Lock;
 use crate::error::{Error, Result};
 use crate::input;
 use crate::name::{ProfileName, VarName};
+use crate::pick;
 use crate::profile::Profile;
 use crate::store::{self, Store};
 use crate::vars::{self, Expiry, Shell, Vars};
@@ -31,10 +32,6 @@ fn warn_expired(vars: &Vars) {
 
 fn print(text: &str) -> Result<()> {
     Ok(std::io::stdout().lock().write_all(text.as_bytes())?)
-}
-
-fn require(profile: Option<ProfileName>) -> Result<ProfileName> {
-    profile.ok_or_else(|| "missing PROFILE".to_string().into())
 }
 
 pub fn list(store: &Store, profile: Option<ProfileName>, reveal: bool) -> Result<()> {
@@ -135,10 +132,14 @@ pub fn export(
 }
 
 /// Shell code is only meant for `eval`; on a terminal it would be a mistake.
-fn refuse_terminal(command: &str, name: &ProfileName) -> Result<()> {
+fn refuse_terminal(command: &str, profile: &Option<ProfileName>) -> Result<()> {
     if std::io::stdout().is_terminal() {
+        let arg = profile
+            .as_ref()
+            .map_or("PROFILE".to_string(), |n| format!("'{n}'"));
         return Err(format!(
-            "refusing to print shell code to a terminal; use: eval \"$(duckpond {command} '{name}')\""
+            "refusing to print shell code to a terminal; use: eval \"$(duckpond {command} {arg})\"; \
+             or add eval \"$(duckpond init zsh)\" to your shell rc so that `duckpond {command}` works"
         )
         .into());
     }
@@ -146,21 +147,20 @@ fn refuse_terminal(command: &str, name: &ProfileName) -> Result<()> {
 }
 
 pub fn load(store: &Store, profile: Option<ProfileName>, shell: Shell) -> Result<()> {
-    let name = require(profile)?;
-    refuse_terminal("load", &name)?;
-    let p = open(store, name)?;
+    refuse_terminal("load", &profile)?;
+    let p = open(store, pick::profile(store, profile)?)?;
     warn_expired(&p.vars);
     print(&vars::exports(&p.vars, shell))
 }
 
 pub fn unload(store: &Store, profile: Option<ProfileName>, shell: Shell) -> Result<()> {
-    let name = require(profile)?;
-    refuse_terminal("unload", &name)?;
+    refuse_terminal("unload", &profile)?;
+    let name = pick::profile(store, profile)?;
     print(&vars::unsets(&open(store, name)?.vars, shell))
 }
 
 pub fn launch(store: &Store, profile: Option<ProfileName>, command: Vec<String>) -> Result<()> {
-    let name = require(profile)?;
+    let name = pick::profile(store, profile)?;
     let p = open(store, name)?;
     warn_expired(&p.vars);
     let (program, args) = command

@@ -9,6 +9,9 @@ use std::process::{Command, Stdio};
 
 const PASS: &str = "correct horse battery";
 const SECRET: &str = "hunter2-value-xyz";
+/// Quotes, command substitution, backticks and a newline: must reach a shell variable unchanged.
+const HOSTILE: &str = "it's \"q\" $(touch PWNED) `touch PWNED` line1\nline2";
+const SPACED: &str = "Fresh DB1.TEST.LOCAL";
 
 struct Out {
     code: i32,
@@ -306,7 +309,7 @@ fn have(program: &str) -> bool {
 #[test]
 fn shell_eval_is_injection_safe() {
     let e = Env::new();
-    let value = "it's \"q\" $(touch PWNED) `touch PWNED` line1\nline2";
+    let value = HOSTILE;
     e.ok(&["create", "P"], "");
     e.ok(&["set", "P", "V"], value);
     let script = r#"eval "$("$DP" load P)"; printf %s "$V"; printf '\0'; eval "$("$DP" unload P)"; printf %s "${V-unset}""#;
@@ -407,4 +410,137 @@ fn gpg_lock_round_trip() {
 fn version() {
     let e = Env::new();
     assert_eq!(e.ok(&["--version"], "").stdout, "duckpond 0.1.0\n");
+}
+
+/// Runs `script` in `shell` with `duckpond` on PATH as a real command, so `init` output wraps it.
+fn run_in_shell(e: &Env, shell: &str, script: &str) -> Out {
+    let bin_dir = std::path::Path::new(env!("CARGO_BIN_EXE_duckpond"))
+        .parent()
+        .unwrap();
+    let path = format!("{}:{}", bin_dir.display(), std::env::var("PATH").unwrap());
+    let mut c = e.command(shell);
+    c.env("PATH", path).args(["-c", script]);
+    run(c, "")
+}
+
+const SH_SESSION: &str = r#"eval "$(duckpond init @SH@)"
+duckpond load 'Fresh DB1.TEST.LOCAL'; printf %s "$V"; printf '\0'
+duckpond unload 'Fresh DB1.TEST.LOCAL'; printf %s "${V-unset}"; printf '\0'
+duckpond list; printf '\0'
+duckpond load --help; printf '\0'
+duckpond unload -h; printf '\0'
+printf %s "${V-unset}"; printf '\0'
+COMPLETE=@SH@ _CLAP_COMPLETE_INDEX=2 duckpond -- duckpond load Fre"#;
+
+/// Not run here (fish is not installed on the dev machine); same session as SH_SESSION.
+const FISH_SESSION: &str = r#"duckpond init fish | source
+duckpond load 'Fresh DB1.TEST.LOCAL'; printf %s "$V"; printf '\0'
+duckpond unload 'Fresh DB1.TEST.LOCAL'; set -q V; or printf unset; printf '\0'
+duckpond list; printf '\0'
+duckpond load --help; printf '\0'
+duckpond unload -h; printf '\0'
+set -q V; or printf unset"#;
+
+#[test]
+fn init_wrappers_eval_help_and_pass_through() {
+    let e = Env::new();
+    e.ok(&["create", SPACED], "");
+    e.ok(&["set", SPACED, "V"], HOSTILE);
+    for shell in ["zsh", "bash", "fish"] {
+        if !have(shell) {
+            eprintln!("skip {shell}: not installed");
+            continue;
+        }
+        let stub = "compdef() { print -r -- \"$*\" >> compdefs; }\n";
+        let script = match shell {
+            "fish" => FISH_SESSION.to_string(),
+            "zsh" => format!("{stub}{}", SH_SESSION.replace("@SH@", shell)),
+            _ => SH_SESSION.replace("@SH@", shell),
+        };
+        let o = run_in_shell(&e, shell, &script);
+        assert_eq!(o.code, 0, "{shell}: {}", o.stderr);
+        assert_eq!(o.stderr, "", "{shell}");
+        let parts: Vec<&str> = o.stdout.split('\0').collect();
+        assert_eq!(
+            parts[..3],
+            [HOSTILE, "unset", "Fresh DB1.TEST.LOCAL\n"],
+            "{shell}"
+        );
+        assert!(
+            parts[3].contains("Usage: duckpond load"),
+            "{shell}: {}",
+            parts[3]
+        );
+        assert!(
+            parts[4].contains("Usage: duckpond unload"),
+            "{shell}: {}",
+            parts[4]
+        );
+        assert_eq!(parts[5], "unset", "{shell}: help output was evaluated");
+        if shell != "fish" {
+            // The wrapper function sits between the shell and the completer binary.
+            assert_eq!(parts[6], "Fresh DB1.TEST.LOCAL", "{shell}");
+        }
+        assert!(!e.cwd().join("PWNED").exists(), "{shell} ran injected code");
+        if shell == "zsh" {
+            let log = fs::read_to_string(e.cwd().join("compdefs")).unwrap();
+            assert!(log.contains("duckpond"), "{log}");
+        }
+    }
+}
+
+/// Run the binary as the registered completion script does; returns the candidates.
+fn complete(e: &Env, shell: &str, words: &[&str]) -> Vec<String> {
+    let sep = if shell == "zsh" { "\n" } else { "\x0b" };
+    let index = words.len(); // the shell passes the program name as word 0
+    let mut c = e.command(env!("CARGO_BIN_EXE_duckpond"));
+    c.env("COMPLETE", shell)
+        .env("_CLAP_IFS", sep)
+        .env("_CLAP_COMPLETE_INDEX", index.to_string())
+        .env("_CLAP_COMPLETE_COMP_TYPE", "9")
+        .env("_CLAP_COMPLETE_SPACE", "false")
+        .arg("--")
+        .args(["duckpond"])
+        .args(words);
+    let o = run(c, "");
+    assert_eq!(o.code, 0, "{shell} {words:?}: {}", o.stderr);
+    o.stdout.split(sep).map(String::from).collect()
+}
+
+#[test]
+fn completion_lists_profile_names_without_a_passphrase() {
+    let mut e = Env::new();
+    e.ok(&["create", SPACED], "");
+    e.ok(&["create", "Openly"], "");
+    e.pass = None;
+    for shell in ["zsh", "bash"] {
+        for sub in [
+            "load", "unload", "launch", "list", "set", "unset", "delete", "import", "export",
+        ] {
+            let all = complete(&e, shell, &[sub, ""]);
+            for name in [SPACED, "Openly"] {
+                assert!(all.iter().any(|c| c == name), "{shell} {sub}: {all:?}");
+            }
+        }
+        assert_eq!(complete(&e, shell, &["load", "Fre"]), [SPACED], "{shell}");
+        // `create` names a new profile: no profile candidates.
+        let create = complete(&e, shell, &["create", ""]);
+        assert!(!create.iter().any(|c| c == SPACED), "{shell}: {create:?}");
+    }
+}
+
+#[test]
+fn init_prints_one_script_per_shell() {
+    let e = Env::new();
+    for (shell, needles) in [
+        ("zsh", &["_clap_dynamic_completer_duckpond"][..]),
+        ("bash", &["_clap_complete_duckpond"]),
+        ("fish", &["function duckpond", "--command duckpond"]),
+    ] {
+        let out = e.ok(&["init", shell], "").stdout;
+        for n in needles {
+            assert!(out.contains(n), "{shell}: missing {n}");
+        }
+    }
+    assert_ne!(e.run(&["init", "csh"], "").code, 0);
 }

@@ -3,7 +3,9 @@ use std::str::FromStr;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::error::Error;
+use crate::init::InitShell;
 use crate::name::{ProfileName, VarName};
+use crate::pick;
 use crate::vars::{Expiry, Shell};
 
 #[derive(Parser)]
@@ -18,7 +20,7 @@ pub enum Command {
     /// List profiles, or show the variables of one profile
     List {
         /// Profile to show; without it, list all profile names
-        #[arg(value_parser = parse::<ProfileName>)]
+        #[arg(value_parser = parse::<ProfileName>, add = pick::candidates())]
         profile: Option<ProfileName>,
         /// Show values instead of ********
         #[arg(long)]
@@ -36,7 +38,7 @@ pub enum Command {
     /// Add or change variables; values come from the terminal prompt or stdin
     Set {
         /// Profile to change
-        #[arg(value_parser = parse::<ProfileName>)]
+        #[arg(value_parser = parse::<ProfileName>, add = pick::candidates())]
         profile: ProfileName,
         /// Variables to set
         #[arg(required = true, value_parser = parse::<VarName>)]
@@ -54,7 +56,7 @@ pub enum Command {
     /// Remove variables from a profile
     Unset {
         /// Profile to change
-        #[arg(value_parser = parse::<ProfileName>)]
+        #[arg(value_parser = parse::<ProfileName>, add = pick::candidates())]
         profile: ProfileName,
         /// Variables to remove
         #[arg(required = true, value_parser = parse::<VarName>)]
@@ -63,7 +65,7 @@ pub enum Command {
     /// Delete a profile
     Delete {
         /// Profile to delete
-        #[arg(value_parser = parse::<ProfileName>)]
+        #[arg(value_parser = parse::<ProfileName>, add = pick::candidates())]
         profile: ProfileName,
         /// Delete without asking
         #[arg(long)]
@@ -72,7 +74,7 @@ pub enum Command {
     /// Merge variables from a dotenv file into a profile
     Import {
         /// Profile to change
-        #[arg(value_parser = parse::<ProfileName>)]
+        #[arg(value_parser = parse::<ProfileName>, add = pick::candidates())]
         profile: ProfileName,
         /// Dotenv file to read, or - for stdin
         file: String,
@@ -80,7 +82,7 @@ pub enum Command {
     /// Write the variables of a profile as dotenv
     Export {
         /// Profile to read
-        #[arg(value_parser = parse::<ProfileName>)]
+        #[arg(value_parser = parse::<ProfileName>, add = pick::candidates())]
         profile: ProfileName,
         /// Export only these variables
         #[arg(value_parser = parse::<VarName>)]
@@ -95,7 +97,7 @@ pub enum Command {
     /// Print shell code that sets the variables of a profile
     Load {
         /// Profile to load
-        #[arg(value_parser = parse::<ProfileName>)]
+        #[arg(value_parser = parse::<ProfileName>, add = pick::candidates())]
         profile: Option<ProfileName>,
         /// Shell syntax of the output
         #[arg(long, value_enum, default_value = "sh")]
@@ -104,7 +106,7 @@ pub enum Command {
     /// Print shell code that unsets the variables of a profile
     Unload {
         /// Profile to unload
-        #[arg(value_parser = parse::<ProfileName>)]
+        #[arg(value_parser = parse::<ProfileName>, add = pick::candidates())]
         profile: Option<ProfileName>,
         /// Shell syntax of the output
         #[arg(long, value_enum, default_value = "sh")]
@@ -113,11 +115,17 @@ pub enum Command {
     /// Run a command with the variables of a profile
     Launch {
         /// Profile to use
-        #[arg(value_parser = parse::<ProfileName>)]
+        #[arg(value_parser = parse::<ProfileName>, add = pick::candidates())]
         profile: Option<ProfileName>,
         /// Command and arguments, after --
         #[arg(last = true, required = true, value_name = "CMD")]
         command: Vec<String>,
+    },
+    /// Print shell code: a `duckpond` wrapper that evaluates load/unload, and completion
+    Init {
+        /// Shell to print code for
+        #[arg(value_enum)]
+        shell: InitShell,
     },
 }
 
