@@ -1,7 +1,6 @@
 //! `duckpond init SHELL`: shell code for `eval`. One raw string per shell, no templating.
 
 use std::io::Write;
-use std::path::PathBuf;
 
 use clap::ValueEnum;
 use clap_complete::env::{Bash, EnvCompleter, Fish, Zsh};
@@ -48,23 +47,13 @@ const FISH: &str = r#"function duckpond
 end
 "#;
 
-/// The program the completion script calls: as in clap_complete's default, argv[0], made absolute if it has a path.
-fn completer() -> String {
-    let argv0 = std::env::args_os()
-        .next()
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    match std::env::current_dir() {
-        Ok(dir) if argv0.components().count() > 1 => dir.join(argv0),
-        _ => argv0,
-    }
-    .to_string_lossy()
-    .into_owned()
-}
+/// The command name, also the program the completion scripts call. Not argv[0]: bash puts the
+/// completer inside double quotes, so a path from argv[0] would be expanded at every TAB.
+pub const NAME: &str = "duckpond";
 
 fn registration(shell: &dyn EnvCompleter) -> Result<String> {
     let mut buf = Vec::new();
-    shell.write_registration("COMPLETE", "duckpond", "duckpond", &completer(), &mut buf)?;
+    shell.write_registration("COMPLETE", NAME, NAME, NAME, &mut buf)?;
     Ok(String::from_utf8_lossy(&buf).into_owned())
 }
 

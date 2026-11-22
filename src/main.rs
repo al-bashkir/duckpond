@@ -46,7 +46,9 @@ fn run(command: Command) -> Result<()> {
 }
 
 fn main() {
-    CompleteEnv::with_factory(cli::command).complete();
+    CompleteEnv::with_factory(cli::command)
+        .completer(init::NAME)
+        .complete();
     let cli = Cli::from_arg_matches(&cli::command().get_matches()).unwrap_or_else(|e| e.exit());
     if let Err(e) = run(cli.command) {
         eprintln!("duckpond: error: {e}");

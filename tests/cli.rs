@@ -615,6 +615,38 @@ fn bash_completion_quotes_file_names() {
     }
 }
 
+/// The bash script calls its completer inside double quotes: a path taken from argv[0], such
+/// as a directory named `x$(touch PWNED)y`, would run at every TAB.
+#[test]
+fn completion_script_calls_duckpond_by_name() {
+    use std::os::unix::process::CommandExt;
+    let e = Env::new();
+    if !usable("bash") {
+        return;
+    }
+    let print = |args: &[&str], complete: &str| {
+        let mut c = e.command(env!("CARGO_BIN_EXE_duckpond"));
+        c.arg0("x$(touch PWNED)y/duckpond").args(args);
+        if !complete.is_empty() {
+            c.env("COMPLETE", complete);
+        }
+        let o = run(c, "");
+        assert_eq!(o.code, 0, "{args:?}: {}", o.stderr);
+        o.stdout
+    };
+    let call = ". ./reg.bash; COMP_WORDS=(duckpond lis); COMP_CWORD=1; COMP_TYPE=9
+        _clap_complete_duckpond duckpond lis duckpond; printf %s \"${COMPREPLY[*]}\"";
+    for (how, script) in [
+        ("init bash", print(&["init", "bash"], "")),
+        ("COMPLETE=bash", print(&[], "bash")),
+    ] {
+        fs::write(e.cwd().join("reg.bash"), script).unwrap();
+        let o = run_in_shell(&e, "bash", call);
+        assert!(!e.cwd().join("PWNED").exists(), "{how}: argv[0] ran");
+        assert_eq!(o.stdout, "list", "{how}: {}", o.stderr);
+    }
+}
+
 #[test]
 fn init_prints_one_script_per_shell() {
     let e = Env::new();
