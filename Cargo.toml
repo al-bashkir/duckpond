@@ -2,17 +2,31 @@
 name = "duckpond"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.99"
+description = "Encrypted environment-variable profiles: GPG or age passphrase, loaded into the shell or a command only when needed"
+license = "MIT"
+repository = "https://github.com/al-bashkir/duckpond"
+readme = "README.md"
+categories = ["command-line-utilities", "cryptography"]
+keywords = ["env", "secrets", "dotenv", "gpg", "age"]
 
 [dependencies]
 age = "0.12.1"
 chrono = { version = "0.4.45", default-features = false, features = ["serde", "clock"] }
 clap = { version = "4.6.9", features = ["derive"] }
+# unstable-dynamic: profile names are completed from the store when Tab is pressed
 clap_complete = { version = "4.6.12", features = ["unstable-dynamic"] }
+# The picker needs only Select: no fuzzy matcher, no macros
 inquire = { version = "0.9.5", default-features = false, features = ["crossterm"] }
 rpassword = "7.5.5"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 tempfile = "3.27.0"
 
+[profile.release]
+lto = "thin"
+
+# Tests run age's scrypt (passphrase profiles) in a debug build: optimized dependencies keep
+# each encryption under a second.
 [profile.dev.package."*"]
 opt-level = 2
