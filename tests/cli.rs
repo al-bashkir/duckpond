@@ -9,8 +9,10 @@ use std::process::{Command, Stdio};
 
 const PASS: &str = "correct horse battery";
 const SECRET: &str = "hunter2-value-xyz";
-/// Quotes, command substitution, backticks and a newline: must reach a shell variable unchanged.
-const HOSTILE: &str = "it's \"q\" $(touch PWNED) `touch PWNED` line1\nline2";
+/// Quotes, backslashes, command substitution, backticks and a newline: must reach a shell
+/// variable unchanged. `\'` ends a single-quoted word in fish.
+const HOSTILE: &str =
+    "it's \"q\" $(touch PWNED) `touch PWNED` x\\';touch PWNED;# a\\\\b line1\nline2";
 const SPACED: &str = "Fresh DB1.TEST.LOCAL";
 
 struct Out {
@@ -292,7 +294,7 @@ fn load_and_unload_text() {
     let e = Env::new();
     e.ok(&["create", "P"], "");
     e.ok(&["import", "P", "-"], "A=plain\nB=it's\nC=back\\slash\n");
-    let sh = "export A='plain'\nexport B='it'\\''s'\nexport C='back\\slash'\n";
+    let sh = "export A='plain'\nexport B='it'\\''s'\nexport C='back'\\\\'slash'\n";
     let fish = "set -gx A 'plain'\nset -gx B 'it\\'s'\nset -gx C 'back\\\\slash'\n";
     assert_eq!(e.ok(&["load", "P"], "").stdout, sh);
     assert_eq!(e.ok(&["load", "P", "--shell", "sh"], "").stdout, sh);
@@ -351,6 +353,31 @@ fn shell_eval_is_injection_safe() {
     }
     if ran == 0 {
         eprintln!("no shell available, test skipped");
+    }
+}
+
+/// Without `init`, a fish user may run the default (sh) output. It must mean the same in fish.
+#[test]
+fn default_load_output_is_safe_in_fish() {
+    if !usable("fish") {
+        return;
+    }
+    let e = Env::new();
+    e.ok(&["create", "P"], "");
+    e.ok(&["set", "P", "V"], HOSTILE);
+    for script in [
+        r#"eval "$("$DP" load P)"; printf %s "$V""#,
+        r#""$DP" load P | source; printf %s "$V""#,
+    ] {
+        let mut c = e.command("fish");
+        c.env("DP", env!("CARGO_BIN_EXE_duckpond"))
+            .args(["-c", script]);
+        let o = run(c, "");
+        assert!(
+            !e.cwd().join("PWNED").exists(),
+            "{script}: ran injected code"
+        );
+        assert_eq!(o.stdout, HOSTILE, "{script}: {}", o.stderr);
     }
 }
 

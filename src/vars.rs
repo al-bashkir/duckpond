@@ -171,7 +171,15 @@ pub fn check_terminal_safe(text: &str) -> Result<()> {
 
 fn quote(value: &str, shell: Shell) -> String {
     match shell {
-        Shell::Sh => format!("'{}'", value.replace('\'', "'\\''")),
+        // Quote and backslash go outside the single quotes, as \' and \\: sh, bash, zsh and
+        // fish then read the same value (fish treats \' and \\ inside single quotes as escapes).
+        Shell::Sh => {
+            let outside = |c: char| match c {
+                '\'' | '\\' => format!("'\\{c}'"),
+                c => c.to_string(),
+            };
+            format!("'{}'", value.chars().map(outside).collect::<String>())
+        }
         Shell::Fish => format!("'{}'", value.replace('\\', "\\\\").replace('\'', "\\'")),
     }
 }
@@ -575,7 +583,7 @@ mod tests {
         ]);
         assert_eq!(
             exports(&v, Shell::Sh).unwrap(),
-            "export A='it'\\''s'\nexport B='a\\b'\nexport C='l1\nl2'\nexport D='$(x) `y` $Z'\n"
+            "export A='it'\\''s'\nexport B='a'\\\\'b'\nexport C='l1\nl2'\nexport D='$(x) `y` $Z'\n"
         );
     }
 

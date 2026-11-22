@@ -74,8 +74,8 @@ reads `work` as the key. The menu shows only keys that can encrypt (not expired,
 or disabled), and the profile is locked to the fingerprint you choose.
 
 Without `init`, use `eval "$(duckpond load work)"` in bash or zsh, and
-`duckpond load work --shell fish | source` in fish. The default output is for sh-type
-shells: fish reads it differently, and a value can then run as code. `load` refuses to print to a terminal,
+`duckpond load work --shell fish | source` in fish. (The default output also loads safely
+in fish, but `unload` needs `--shell fish` there.) `load` refuses to print to a terminal,
 so secrets do not land in your scrollback by mistake.
 
 ## Storage
