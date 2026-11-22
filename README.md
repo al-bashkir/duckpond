@@ -9,6 +9,9 @@ command with them, only when you need them.
 cargo install --path .
 ```
 
+Or download a binary from the GitHub releases (Linux x86_64 static, macOS arm64) and check
+it against `SHA256SUMS`.
+
 Needs `gpg` on `PATH` for GPG profiles. Linux and macOS.
 
 With a terminal pinentry (curses or tty), gpg must know your terminal, else it fails with
@@ -95,6 +98,19 @@ so secrets do not land in your scrollback by mistake.
   child's environment.
 - Dotenv import/export is raw `NAME=value` per line (Docker `--env-file` rules: no quote
   removal). Export refuses values that contain line breaks.
+
+## Release
+
+CI (fmt, clippy, tests) runs on every push that changes `src/`, `tests/`, `Cargo.toml` or
+`Cargo.lock`. To release, set the new version in `Cargo.toml`, commit, then push a tag with
+the same version:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The release workflow runs CI again, stops if the tag and `Cargo.toml` differ, builds the
+binaries and publishes them with `SHA256SUMS` as a GitHub release.
 
 ## Glossary
 
