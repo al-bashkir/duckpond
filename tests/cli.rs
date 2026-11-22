@@ -403,6 +403,10 @@ fn errors_escape_control_characters() {
         assert_eq!(err.lines().count(), 1, "{err}");
         assert!(err.contains("x\\u{1b}]0;T"), "{err}");
     }
+    // A two-line message from a dependency (age) stays readable on one line.
+    fs::write(e.profile_file("P"), "age-encryption.org/v1\nzz").unwrap();
+    let err = e.fail(&["list", "P"], "", &["\\n"]);
+    assert!(err.contains("format.; Have"), "{err}");
 }
 
 #[test]

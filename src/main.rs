@@ -51,8 +51,9 @@ fn main() {
         .complete();
     let cli = Cli::from_arg_matches(&cli::command().get_matches()).unwrap_or_else(|e| e.exit());
     if let Err(e) = run(cli.command) {
-        // Errors quote file names, program names and gpg text: escape them once, here.
-        eprintln!("duckpond: error: {}", vars::escape(&e.to_string()));
+        // Errors quote file names, program names and gpg or age text: one line, escaped, here.
+        let line = e.to_string().replace('\n', "; ");
+        eprintln!("duckpond: error: {}", vars::escape(&line));
         std::process::exit(1);
     }
 }

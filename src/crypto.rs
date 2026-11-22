@@ -125,8 +125,7 @@ fn gpg_message(stderr: &str) -> String {
         .lines()
         .filter(|l| !l.starts_with("[GNUPG:]"))
         .collect();
-    // One line: the error printer escapes line feeds.
-    lines.join("; ").trim().to_string()
+    lines.join("\n").trim().to_string()
 }
 
 /// A GPG secret key that can encrypt, as offered by `create --gpg` without KEY.
@@ -300,11 +299,6 @@ uid:r::::1795351498::00::Revoked <rev@example.invalid>::::::::::0:
     fn gpg_message_drops_status_lines() {
         let s = "[GNUPG:] NO_SECKEY AB\ngpg: decryption failed: No secret key \n[GNUPG:] X\n";
         assert_eq!(gpg_message(s), "gpg: decryption failed: No secret key");
-        let two = "gpg: k: skipped: No public key\n[GNUPG:] X\ngpg: encryption failed\n";
-        assert_eq!(
-            gpg_message(two),
-            "gpg: k: skipped: No public key; gpg: encryption failed"
-        );
     }
 
     #[test]
