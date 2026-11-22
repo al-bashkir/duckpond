@@ -88,6 +88,14 @@ so secrets do not land in your scrollback by mistake.
 
 ## Security notes
 
+- Keep the store where only your account can write. Encryption keeps the values secret,
+  but it does not prove that you wrote a profile file. Anyone with your GPG public key can
+  write a GPG profile, and duckpond reads the lock type from the file, so such a file can
+  also replace a passphrase profile. A changed file can set any variable, `PATH` and
+  `LD_PRELOAD` too, so `load` and `launch` would run its code. A GPG profile is saved again
+  to the keys listed in its file, and an old copy restored from a backup loads as it is.
+  Do not put the store in a sync folder, a shared directory or a backup that someone else
+  can change.
 - Values never come from command-line arguments, so they do not reach shell history or `ps`.
 - Prompts read and write `/dev/tty`. stdout carries only data, so `eval` never runs a prompt,
   a warning or an error message.
