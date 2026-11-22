@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 use crate::error::Error;
 use crate::init::InitShell;
@@ -13,6 +13,44 @@ use crate::vars::{Expiry, Shell};
 pub struct Cli {
     #[command(subcommand)]
     pub command: Command,
+}
+
+/// Command groups of the top-level help. Every subcommand is in exactly one group (tested).
+const GROUPS: &[(&str, &[&str])] = &[
+    ("Profiles", &["list", "create", "delete"]),
+    ("Variables", &["set", "unset", "import", "export"]),
+    ("Shell", &["load", "unload", "launch"]),
+    ("Setup", &["init"]),
+];
+
+/// The CLI definition, with the top-level help listing commands by group.
+/// clap has one heading for all subcommands, so the groups go into the help template.
+pub fn command() -> clap::Command {
+    let cmd = Cli::command();
+    let template = help_template(&cmd);
+    cmd.help_template(template)
+}
+
+fn help_template(cmd: &clap::Command) -> String {
+    let styles = cmd.get_styles();
+    let (h, l) = (styles.get_header(), styles.get_literal());
+    let width = GROUPS
+        .iter()
+        .flat_map(|(_, n)| n.iter())
+        .map(|n| n.len())
+        .max();
+    let width = width.unwrap_or(0);
+    let mut out = String::from("{before-help}{about-with-newline}\n{usage-heading} {usage}\n\n");
+    for (group, names) in GROUPS {
+        out += &format!("{h}{group}:{h:#}\n");
+        for name in *names {
+            let about = cmd.find_subcommand(name).and_then(|c| c.get_about());
+            let about = about.map(|a| a.to_string()).unwrap_or_default();
+            out += &format!("  {l}{name:<width$}{l:#}  {about}\n");
+        }
+        out.push('\n');
+    }
+    out + &format!("{h}Options:{h:#}\n{{options}}{{after-help}}")
 }
 
 #[derive(Subcommand)]
@@ -173,11 +211,58 @@ fn parse_gpg(s: &str) -> Result<GpgArg, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use clap::CommandFactory;
 
     #[test]
     fn definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn every_command_is_in_exactly_one_group() {
+        let mut defined: Vec<String> = Cli::command()
+            .get_subcommands()
+            .map(|c| c.get_name().to_string())
+            .collect();
+        let mut grouped: Vec<String> = GROUPS
+            .iter()
+            .flat_map(|(_, names)| names.iter().map(|n| n.to_string()))
+            .collect();
+        defined.sort();
+        grouped.sort();
+        assert_eq!(grouped, defined);
+    }
+
+    #[test]
+    fn top_help_lists_commands_by_group() {
+        let help = command().render_help().to_string();
+        let start = help.find("Profiles:").expect(&help);
+        let groups = &help[start..help.find("Options:").expect(&help)];
+        let headings: Vec<&str> = groups.lines().filter(|l| l.ends_with(':')).collect();
+        assert_eq!(headings, ["Profiles:", "Variables:", "Shell:", "Setup:"]);
+        assert!(
+            groups.contains("Profiles:\n  list    List profiles"),
+            "{groups}"
+        );
+        assert!(
+            groups.contains("Shell:\n  load    Print shell code"),
+            "{groups}"
+        );
+        assert!(!help.contains("Commands:"), "{help}");
+        assert!(help.contains("-V, --version"), "{help}");
+    }
+
+    #[test]
+    fn subcommand_help_keeps_the_default_layout() {
+        let mut cmd = command();
+        let help = cmd
+            .find_subcommand_mut("create")
+            .unwrap()
+            .render_help()
+            .to_string();
+        assert!(
+            help.contains("Options:") && !help.contains("Profiles:"),
+            "{help}"
+        );
     }
 
     #[test]

@@ -419,6 +419,17 @@ fn version() {
     assert_eq!(e.ok(&["--version"], "").stdout, "duckpond 0.1.0\n");
 }
 
+#[test]
+fn help_is_grouped_with_and_without_args() {
+    let e = Env::new();
+    let help = e.ok(&["--help"], "").stdout;
+    let bare = e.run(&[], "");
+    assert_eq!(bare.code, 2);
+    assert_eq!(bare.stderr, help, "no args prints the same help");
+    assert!(help.contains("Profiles:\n  list"), "{help}");
+    assert!(!help.contains('\x1b'), "no color codes when piped");
+}
+
 /// Runs `script` in `shell` with `duckpond` on PATH as a real command, so `init` output wraps it.
 fn run_in_shell(e: &Env, shell: &str, script: &str) -> Out {
     let bin_dir = std::path::Path::new(env!("CARGO_BIN_EXE_duckpond"))

@@ -10,7 +10,7 @@ mod profile;
 mod store;
 mod vars;
 
-use clap::{CommandFactory, Parser};
+use clap::FromArgMatches;
 use clap_complete::CompleteEnv;
 
 use cli::{Cli, Command};
@@ -46,8 +46,9 @@ fn run(command: Command) -> Result<()> {
 }
 
 fn main() {
-    CompleteEnv::with_factory(Cli::command).complete();
-    if let Err(e) = run(Cli::parse().command) {
+    CompleteEnv::with_factory(cli::command).complete();
+    let cli = Cli::from_arg_matches(&cli::command().get_matches()).unwrap_or_else(|e| e.exit());
+    if let Err(e) = run(cli.command) {
         eprintln!("duckpond: error: {e}");
         std::process::exit(1);
     }
