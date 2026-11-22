@@ -154,6 +154,21 @@ pub fn to_dotenv(vars: &Vars, only: &[VarName]) -> Result<String> {
     Ok(out)
 }
 
+/// A terminal acts on control characters (title, screen, cursor), so raw dotenv text with one
+/// must not reach it. Line feed and tab are layout only.
+pub fn check_terminal_safe(text: &str) -> Result<()> {
+    if text
+        .chars()
+        .any(|c| c.is_control() && c != '\n' && c != '\t')
+    {
+        return Err("refusing to print control characters to a terminal; \
+                    use -o FILE, a pipe, or list --reveal"
+            .to_string()
+            .into());
+    }
+    Ok(())
+}
+
 fn quote(value: &str, shell: Shell) -> String {
     match shell {
         Shell::Sh => format!("'{}'", value.replace('\'', "'\\''")),
@@ -518,6 +533,18 @@ mod tests {
             let v = vars(&[("A", bad)]);
             let msg = err(to_dotenv(&v, &[]));
             assert!(msg.contains('A') && !msg.contains('x'), "{msg}");
+        }
+    }
+
+    #[test]
+    fn terminal_text_refuses_control_chars_except_newline_and_tab() {
+        assert!(check_terminal_safe("A=1\tx\nB=é\n").is_ok());
+        for bad in ["\u{1b}]0;T\u{7}", "\u{9b}2J", "\u{7f}", "a\rb"] {
+            let msg = err(check_terminal_safe(bad));
+            assert!(
+                msg.contains("-o FILE") && !msg.contains(bad),
+                "{bad:?}: {msg}"
+            );
         }
     }
 

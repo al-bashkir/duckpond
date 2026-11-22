@@ -138,7 +138,12 @@ pub fn export(
     let text = vars::to_dotenv(&open(store, name)?.vars, &names)?;
     match output {
         Some(path) => store::write_atomic(&path, text.as_bytes(), force),
-        None => print(&text),
+        None => {
+            if std::io::stdout().is_terminal() {
+                vars::check_terminal_safe(&text)?;
+            }
+            print(&text)
+        }
     }
 }
 

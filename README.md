@@ -89,7 +89,8 @@ so secrets do not land in your scrollback by mistake.
 - Prompts read and write `/dev/tty`. stdout carries only data, so `eval` never runs a prompt,
   a warning or an error message.
 - `list` masks values unless you give `--reveal`. Control characters are shown escaped,
-  so a value cannot send escape sequences to your terminal.
+  so a value cannot send escape sequences to your terminal. `export` without `-o` refuses
+  to print a value with control characters to a terminal; a pipe or `-o` gets it unchanged.
 - Profile names allow only `A-Z a-z 0-9 space . _ @ + -`, start with a letter or digit,
   and contain no path separators.
 - `DUCKPOND_PASSPHRASE` skips the passphrase prompt (for scripts). Other processes of
