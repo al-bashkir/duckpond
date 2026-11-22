@@ -518,7 +518,7 @@ duckpond unload -h; printf '\0'
 printf %s "${V-unset}"; printf '\0'
 COMPLETE=@SH@ _CLAP_COMPLETE_INDEX=2 duckpond -- duckpond load Fre"#;
 
-/// Not run here (fish is not installed on the dev machine); same session as SH_SESSION.
+/// Same session as SH_SESSION. Runs where fish is installed (not in CI).
 const FISH_SESSION: &str = r#"duckpond init fish | source
 duckpond load 'Fresh DB1.TEST.LOCAL'; printf %s "$V"; printf '\0'
 duckpond unload 'Fresh DB1.TEST.LOCAL'; set -q V; or printf unset; printf '\0'

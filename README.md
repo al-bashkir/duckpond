@@ -39,7 +39,7 @@ This gives you:
   name, they open a picker (type to filter).
 - Tab completion of commands, flags and profile names.
 
-Tested with zsh and bash. The fish script has not been run yet.
+Tested with zsh, bash and fish 4.6.
 
 ## Usage
 
@@ -73,7 +73,9 @@ duckpond delete work             # asks; --yes when there is no terminal
 reads `work` as the key. The menu shows only keys that can encrypt (not expired, revoked
 or disabled), and the profile is locked to the fingerprint you choose.
 
-Without `init`, use `eval "$(duckpond load work)"`. `load` refuses to print to a terminal,
+Without `init`, use `eval "$(duckpond load work)"` in bash or zsh, and
+`duckpond load work --shell fish | source` in fish. The default output is for sh-type
+shells: fish reads it differently, and a value can then run as code. `load` refuses to print to a terminal,
 so secrets do not land in your scrollback by mistake.
 
 ## Storage

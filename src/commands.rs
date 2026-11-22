@@ -154,8 +154,9 @@ fn refuse_terminal(command: &str, profile: &Option<ProfileName>) -> Result<()> {
             .as_ref()
             .map_or("PROFILE".to_string(), |n| format!("'{n}'"));
         return Err(format!(
-            "refusing to print shell code to a terminal; use: eval \"$(duckpond {command} {arg})\"; \
-             or add eval \"$(duckpond init zsh)\" to your shell rc so that `duckpond {command}` works"
+            "refusing to print shell code to a terminal; use: eval \"$(duckpond {command} {arg})\", \
+             in fish: duckpond {command} {arg} --shell fish | source; \
+             or add `duckpond init` for your shell to its rc file (see README) so that `duckpond {command}` works"
         )
         .into());
     }
