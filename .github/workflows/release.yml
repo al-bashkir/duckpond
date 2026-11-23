@@ -21,6 +21,8 @@ jobs:
         include:
           - target: x86_64-unknown-linux-musl # static: runs on any Linux distribution
             os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl # native arm64 runner: no cross toolchain
+            os: ubuntu-24.04-arm
           - target: aarch64-apple-darwin
             os: macos-latest
     runs-on: ${{ matrix.os }}
@@ -74,7 +76,7 @@ jobs:
         run: |
           mkdir dist
           # The targets of the build matrix.
-          for target in x86_64-unknown-linux-musl aarch64-apple-darwin; do
+          for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl aarch64-apple-darwin; do
             mv "artifacts/$target/duckpond-$GITHUB_REF_NAME-$target.tar.gz" dist/
           done
           left=$(find artifacts -type f)

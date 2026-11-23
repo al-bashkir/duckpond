@@ -6,6 +6,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Release binary for Linux arm64 (static, musl).
+
 ## [0.1.1] - 2026-11-23
 
 ### Changed

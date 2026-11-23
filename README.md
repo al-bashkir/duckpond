@@ -31,7 +31,7 @@ cargo install --locked --path .
 `--locked` builds the dependency versions in `Cargo.lock`, which CI tests and `cargo audit`
 checks. Without it, cargo takes the newest compatible versions.
 
-Or download a binary from the GitHub releases (Linux x86_64 static, macOS arm64) and check
+Or download a binary from the GitHub releases (Linux x86_64 and arm64 static, macOS arm64) and check
 it against `SHA256SUMS`.
 
 Needs `gpg` on `PATH` for GPG profiles. Linux and macOS.
