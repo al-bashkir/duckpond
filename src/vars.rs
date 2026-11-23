@@ -358,6 +358,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn expiry_accepts_unpadded_and_rejects_other_forms() {
+        assert_eq!(
+            "2026-1-5".parse::<Expiry>().unwrap(),
+            Expiry::On(d("2026-01-05"))
+        );
+        assert_eq!(
+            "2024-02-29".parse::<Expiry>().unwrap(),
+            Expiry::On(d("2024-02-29"))
+        );
+        for bad in [
+            "2026-02-29",
+            "2026-13-01",
+            "20260131",
+            "2026-01-31T00:00",
+            "2026/01/31",
+            "",
+        ] {
+            assert!(bad.parse::<Expiry>().is_err(), "{bad:?} accepted");
+        }
+    }
+
     // ---- serde
     #[test]
     fn payload_json_omits_none_and_round_trips() {
