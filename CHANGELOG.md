@@ -6,6 +6,11 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Dates use `jiff` in place of `chrono`, which is unmaintained (RUSTSEC-2026-0543).
+  `--expires` accepts the same dates as before, and stored expiry dates do not change.
+
 ## [0.1.2] - 2026-11-23
 
 ### Added

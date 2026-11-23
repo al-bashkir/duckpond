@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
@@ -13,7 +13,7 @@ pub struct Var {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub expires: Option<NaiveDate>,
+    pub expires: Option<Date>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,7 +22,7 @@ pub struct Vars(pub BTreeMap<VarName, Var>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Expiry {
-    On(NaiveDate),
+    On(Date),
     Never,
 }
 
@@ -38,7 +38,8 @@ impl FromStr for Expiry {
         if s == "none" {
             return Ok(Expiry::Never);
         }
-        s.parse()
+        // strptime, not parse(): ISO parse rejects "2026-1-5" and accepts "20260131"
+        Date::strptime("%Y-%m-%d", s)
             .map(Expiry::On)
             .map_err(|_| format!("invalid expiry {s:?}: use YYYY-MM-DD or none").into())
     }
@@ -241,7 +242,7 @@ pub fn unsets(vars: &Vars, shell: Shell) -> String {
     vars.0.keys().map(|n| format!("{prefix} {n}\n")).collect()
 }
 
-pub fn expired(vars: &Vars, today: NaiveDate) -> Vec<(&VarName, NaiveDate)> {
+pub fn expired(vars: &Vars, today: Date) -> Vec<(&VarName, Date)> {
     let dated = vars.0.iter().filter_map(|(n, v)| Some((n, v.expires?)));
     dated.filter(|(_, d)| *d < today).collect()
 }
@@ -256,7 +257,7 @@ pub fn escape(s: &str) -> String {
     s.chars().map(one).collect()
 }
 
-fn expires_cell(var: &Var, today: NaiveDate) -> String {
+fn expires_cell(var: &Var, today: Date) -> String {
     match var.expires {
         Some(d) if d < today => format!("{d} (expired)"),
         Some(d) => d.to_string(),
@@ -264,13 +265,7 @@ fn expires_cell(var: &Var, today: NaiveDate) -> String {
     }
 }
 
-fn row(
-    name: &VarName,
-    var: &Var,
-    reveal: bool,
-    today: NaiveDate,
-    cols: (bool, bool),
-) -> Vec<String> {
+fn row(name: &VarName, var: &Var, reveal: bool, today: Date, cols: (bool, bool)) -> Vec<String> {
     let value = if reveal {
         escape(&var.value)
     } else {
@@ -302,7 +297,7 @@ fn format_rows(rows: &[Vec<String>]) -> String {
     out
 }
 
-pub fn render_table(vars: &Vars, reveal: bool, today: NaiveDate) -> String {
+pub fn render_table(vars: &Vars, reveal: bool, today: Date) -> String {
     let cols = (
         vars.0.values().any(|v| v.expires.is_some()),
         vars.0.values().any(|v| v.comment.is_some()),
@@ -327,7 +322,7 @@ mod tests {
         s.parse().unwrap()
     }
 
-    fn d(s: &str) -> NaiveDate {
+    fn d(s: &str) -> Date {
         s.parse().unwrap()
     }
 

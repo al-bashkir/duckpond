@@ -4,7 +4,8 @@ use std::io::{IsTerminal, Read, Write};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 
-use chrono::{Local, NaiveDate};
+use jiff::ZonedDateTime;
+use jiff::civil::Date;
 
 use crate::cli::GpgArg;
 use crate::crypto::Lock;
@@ -16,8 +17,8 @@ use crate::profile::Profile;
 use crate::store::{self, Store};
 use crate::vars::{self, Expiry, Shell, Vars};
 
-fn today() -> NaiveDate {
-    Local::now().date_naive()
+fn today() -> Date {
+    ZonedDateTime::now().date()
 }
 
 fn open(store: &Store, name: ProfileName) -> Result<Profile> {
