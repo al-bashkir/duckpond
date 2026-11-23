@@ -66,8 +66,8 @@ const FISH: &str = r#"function duckpond
 end
 "#;
 
-/// The command name, also the program the completion scripts call. Not argv[0]: bash puts the
-/// completer inside double quotes, so a path from argv[0] would be expanded at every TAB.
+/// The command name, also the program the completion scripts call. Not `argv[0]`: bash puts the
+/// completer inside double quotes, so a path from `argv[0]` would be expanded at every TAB.
 pub const NAME: &str = "duckpond";
 
 fn registration(shell: &dyn EnvCompleter) -> Result<String> {
