@@ -6,10 +6,13 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-23
+
 ### Changed
 
 - The pickers (profile and GPG key) filter like fzf: the letters you type must come in
-  that order, with any text between them, and the best match is at the top. `vadc1` finds `Vault DC1`.
+  that order, with any text between them, and the best match is at the top. `vadc1`
+  finds `Vault DC1`.
 
 ## [0.1.0] - 2026-11-22
 
@@ -40,5 +43,6 @@ First release.
 - `launch` removes `DUCKPOND_PASSPHRASE` from the child's environment.
 - Store directory mode 0700, profile files mode 0600, atomic writes.
 
-[Unreleased]: https://github.com/al-bashkir/duckpond/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/al-bashkir/duckpond/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/al-bashkir/duckpond/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/al-bashkir/duckpond/releases/tag/v0.1.0
