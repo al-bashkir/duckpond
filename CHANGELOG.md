@@ -10,6 +10,12 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Release binary for Linux arm64 (static, musl).
 
+### Changed
+
+- zsh: TAB completes a profile name with spaces in double quotes, `"Addons Mozilla"`,
+  not `Addons\ Mozilla`. A word you began with a backslash keeps backslashes, and so
+  does a file name with characters that are not literal in double quotes.
+
 ### Fixed
 
 - Tab completion of a profile name with spaces now works in a quoted or escaped word, in

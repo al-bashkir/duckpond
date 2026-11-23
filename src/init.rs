@@ -33,6 +33,25 @@ const BASH_ZSH_WRAPPER: &str = r#"duckpond() {
 const ZSH_COMPDEF_OPEN: &str = "if (( $+functions[compdef] )); then\n";
 const ZSH_COMPDEF_CLOSE: &str = "fi\n";
 
+/// clap_complete's zsh script lets zsh escape spaces with backslashes.
+const ZSH_ADD_VALUES: &str = "        [[ -n $other ]] && _describe -V 'values' other\n";
+/// A value with a space goes in double quotes instead, if the word has no quote or backslash
+/// yet (zsh matches a `-Q` value against the word as typed) and all the value's characters
+/// are literal in double quotes (a file name may hold `$` or a backtick).
+const ZSH_ADD_VALUES_QUOTED: &str = r#"        local -a quoted=() plain=()
+        for completion in $other; do
+            value="${completion%%:*}"
+            if [[ -z $compstate[quote] && $PREFIX != *\\* && $value == *' '* &&
+                $value != *[^[:alnum:]\ ._@+/-]* ]]; then
+                quoted+=("$completion")
+            else
+                plain+=("$completion")
+            fi
+        done
+        [[ -n $plain ]] && _describe -V 'values' plain
+        [[ -n $quoted ]] && _describe -V 'values' quoted -Q -P '"' -S '" '
+"#;
+
 const FISH: &str = r#"function duckpond
     switch "$argv[1]"
         case load unload
@@ -66,7 +85,7 @@ pub fn script(shell: InitShell) -> Result<String> {
         ),
         InitShell::Zsh => format!(
             "{BASH_ZSH_WRAPPER}{ZSH_COMPDEF_OPEN}{}{ZSH_COMPDEF_CLOSE}",
-            registration(&Zsh)?
+            registration(&Zsh)?.replace(ZSH_ADD_VALUES, ZSH_ADD_VALUES_QUOTED)
         ),
         InitShell::Fish => format!("{FISH}{}", registration(&Fish)?),
     })

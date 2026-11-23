@@ -663,6 +663,50 @@ fn completion_reads_a_quoted_word() {
     }
 }
 
+/// Types `line` and TAB in an interactive zsh with `init zsh` loaded; returns the line after TAB.
+fn zsh_tab(e: &Env, line: &str) -> String {
+    let script = r#"rm -f buf; zmodload zsh/zpty
+zpty z 'zsh -f -i'
+zpty -w z 'autoload -Uz compinit; compinit -u -D; eval "$(duckpond init zsh)"
+dump() { print -rn -- "$BUFFER" > buf; exit }; zle -N dump; bindkey "^X" dump'
+zpty -w -n z '@LINE@'$'\t\x18'
+for i in {1..100}; do [[ -e buf ]] && break; sleep 0.1; done
+zpty -d z; cat buf"#;
+    let o = run_in_shell(e, "zsh", &script.replace("@LINE@", line));
+    assert_eq!(o.code, 0, "{line}: {}", o.stderr);
+    o.stdout
+}
+
+/// zsh writes a name with a space in double quotes, as a user would type it. A word the user
+/// began with a backslash, and a value with characters that are not literal in double
+/// quotes, keep zsh's backslashes.
+#[test]
+fn zsh_completion_puts_spaced_names_in_double_quotes() {
+    if !usable("zsh") {
+        return;
+    }
+    let mut e = Env::new();
+    e.ok(&["create", "Addons Mozilla"], "");
+    e.ok(&["create", "Openly"], "");
+    e.pass = None;
+    fs::write(e.cwd().join("b c$(touch PWNED)"), "").unwrap();
+    for (typed, want) in [
+        ("duckpond list Ad", r#"duckpond list "Addons Mozilla" "#),
+        ("duckpond list Op", "duckpond list Openly "),
+        (
+            r"duckpond list Addons\ M",
+            r"duckpond list Addons\ Mozilla ",
+        ),
+        (
+            "duckpond export Openly --output b",
+            r"duckpond export Openly --output b\ c\$\(touch\ PWNED\) ",
+        ),
+    ] {
+        assert_eq!(zsh_tab(&e, typed), want, "{typed}");
+    }
+    assert!(!e.cwd().join("PWNED").exists());
+}
+
 /// Without `-o filenames`, bash inserts a file candidate unquoted: a name such as
 /// `out.env;touch X` in a shared directory becomes code on the command line.
 #[test]
