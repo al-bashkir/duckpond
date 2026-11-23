@@ -511,7 +511,8 @@ fn gpg_lock_round_trip() {
 #[test]
 fn version() {
     let e = Env::new();
-    assert_eq!(e.ok(&["--version"], "").stdout, "duckpond 0.1.0\n");
+    let want = concat!("duckpond ", env!("CARGO_PKG_VERSION"), "\n");
+    assert_eq!(e.ok(&["--version"], "").stdout, want);
 }
 
 #[test]
