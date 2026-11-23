@@ -1,9 +1,10 @@
 //! Profile choice: completion candidates and the interactive picker.
 
+use std::ffi::OsStr;
 use std::fmt::Display;
 use std::io::IsTerminal;
 
-use clap_complete::engine::{ArgValueCandidates, CompletionCandidate};
+use clap_complete::engine::{ArgValueCompleter, CompletionCandidate};
 use inquire::InquireError;
 
 use crate::crypto;
@@ -12,11 +13,15 @@ use crate::name::ProfileName;
 use crate::store::Store;
 
 /// Profile names for shell completion. Any error gives an empty list: no prompt, no decryption.
-pub fn candidates() -> ArgValueCandidates {
-    ArgValueCandidates::new(|| {
+/// The shell passes the word with its quoting (`Fresh\ D`, `"Fresh D`). A name has no quote
+/// or backslash, so removing them leaves the text the user means, in any shell.
+pub fn candidates() -> ArgValueCompleter {
+    ArgValueCompleter::new(|current: &OsStr| {
+        let typed = current.to_string_lossy().replace(['"', '\'', '\\'], "");
         let names = Store::from_env().and_then(|s| s.list()).unwrap_or_default();
         names
             .iter()
+            .filter(|n| n.as_ref().starts_with(&typed))
             .map(|n| CompletionCandidate::new(n.to_string()))
             .collect()
     })

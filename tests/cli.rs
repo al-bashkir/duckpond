@@ -642,6 +642,27 @@ fn completion_lists_profile_names_without_a_passphrase() {
     }
 }
 
+/// The shell passes the word as typed, quoting included. After TAB writes the common part of
+/// two names (`Fresh\ DB`), the next TAB must still find both; so must a word begun with a quote.
+#[test]
+fn completion_reads_a_quoted_word() {
+    let mut e = Env::new();
+    e.ok(&["create", "Fresh DB1"], "");
+    e.ok(&["create", "Fresh DB2"], "");
+    e.pass = None;
+    for shell in ["zsh", "bash"] {
+        for word in [r"Fresh\ D", "\"Fresh D", "'Fresh D", "\"Fresh DB1\""] {
+            let found = complete(&e, shell, &["load", word]);
+            let want: &[&str] = if word.ends_with('"') {
+                &["Fresh DB1"]
+            } else {
+                &["Fresh DB1", "Fresh DB2"]
+            };
+            assert_eq!(found, want, "{shell} {word}");
+        }
+    }
+}
+
 /// Without `-o filenames`, bash inserts a file candidate unquoted: a name such as
 /// `out.env;touch X` in a shared directory becomes code on the command line.
 #[test]

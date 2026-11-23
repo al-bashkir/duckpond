@@ -10,6 +10,12 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Release binary for Linux arm64 (static, musl).
 
+### Fixed
+
+- Tab completion of a profile name with spaces now works in a quoted or escaped word, in
+  bash, zsh and fish: `duckpond load "Fresh D` or `duckpond load Fresh\ D`. Before, TAB
+  found nothing after it had written the common part of two names.
+
 ## [0.1.1] - 2026-11-23
 
 ### Changed
