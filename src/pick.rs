@@ -57,6 +57,7 @@ fn select<T: Display>(prompt: &str, items: Vec<T>, empty: &str) -> Result<T> {
         return Err(empty.to_string().into());
     }
     inquire::Select::new(prompt, items)
+        .with_scorer(&|input, _, option, _| score(input, option))
         .prompt()
         .map_err(|e| match e {
             InquireError::OperationCanceled | InquireError::OperationInterrupted => {
@@ -64,6 +65,13 @@ fn select<T: Display>(prompt: &str, items: Vec<T>, empty: &str) -> Result<T> {
             }
             e => e.to_string().into(),
         })
+}
+
+/// fzf-style filter: the typed letters in order, with any text between them.
+/// `None` hides the option; a higher score puts it nearer the top.
+fn score(input: &str, option: &str) -> Option<i64> {
+    let mut matcher = frizbee::Matcher::new(input, &frizbee::Config::default());
+    matcher.match_one(option, 0).map(|m| m.score.into())
 }
 
 #[cfg(test)]
@@ -76,5 +84,19 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert_eq!(err, "no profiles; create one with: duckpond create NAME");
+    }
+
+    /// The picker shows the options that `score` keeps.
+    #[test]
+    fn filter_matches_letters_in_order() {
+        let names = ["Vault DC1", "Vault DC2", "Example DC1"];
+        let shown = |input| -> Vec<&str> {
+            names
+                .into_iter()
+                .filter(|n| score(input, n).is_some())
+                .collect()
+        };
+        assert_eq!(shown("vadc1"), ["Vault DC1"]);
+        assert_eq!(shown(""), names);
     }
 }

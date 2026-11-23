@@ -55,7 +55,8 @@ duckpond init fish | source      # fish
 This gives you:
 
 - `duckpond load` and `duckpond unload` that change the current shell. Without a profile
-  name, they open a picker (type to filter).
+  name, they open a picker. Type to filter like fzf: the letters must come in that
+  order, with any text between them, so `vadc1` finds `Vault DC1`.
 - Tab completion of commands, flags and profile names.
 
 Tested with zsh, bash and fish 4.6.

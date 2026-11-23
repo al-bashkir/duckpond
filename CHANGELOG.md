@@ -6,6 +6,11 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The pickers (profile and GPG key) filter like fzf: the letters you type must come in
+  that order, with any text between them, and the best match is at the top. `vadc1` finds `Vault DC1`.
+
 ## [0.1.0] - 2026-11-22
 
 First release.

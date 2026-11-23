@@ -570,6 +570,7 @@ dependencies = [
  "chrono",
  "clap",
  "clap_complete",
+ "frizbee",
  "inquire",
  "rpassword",
  "serde",
@@ -692,6 +693,15 @@ checksum = "54f0d287c53ffd184d04d8677f590f4ac5379785529e5e08b1c8083acdd5c198"
 dependencies = [
  "memchr",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "frizbee"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19435f276a44d90570cb403d22fbe4b20c80eabc134f718d6ec0ae888eb47edc"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

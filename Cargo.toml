@@ -16,7 +16,9 @@ chrono = { version = "0.4.45", default-features = false, features = ["serde", "c
 clap = { version = "4.6.9", features = ["derive"] }
 # unstable-dynamic: profile names are completed from the store when Tab is pressed
 clap_complete = { version = "4.6.12", features = ["unstable-dynamic"] }
-# The picker needs only Select: no fuzzy matcher, no macros
+# fzf-style filter for the pickers; inquire's own (fuzzy feature) uses an archived crate
+frizbee = "0.13.0"
+# The picker needs only Select: no fuzzy feature (frizbee filters), no macros
 inquire = { version = "0.9.5", default-features = false, features = ["crossterm"] }
 rpassword = "7.5.5"
 serde = { version = "1.0.229", features = ["derive"] }
