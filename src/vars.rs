@@ -66,6 +66,12 @@ fn check_nul(name: &VarName, value: &str) -> Result<()> {
 }
 
 impl Vars {
+    /// The variable `name`, or an error that names it.
+    pub fn get(&self, name: &VarName) -> Result<&Var> {
+        let var = self.0.get(name);
+        var.ok_or_else(|| format!("variable {name} does not exist").into())
+    }
+
     pub fn set(
         &mut self,
         name: VarName,
@@ -73,17 +79,15 @@ impl Vars {
         comment: Option<String>,
         expires: Option<Expiry>,
     ) -> Result<()> {
-        let old = self.0.get(&name).cloned();
-        let mut var = match (value, old) {
-            (Some(value), old) => {
+        let mut var = match value {
+            Some(value) => {
                 check_nul(&name, &value)?;
                 Var {
                     value,
-                    ..old.unwrap_or_default()
+                    ..self.0.get(&name).cloned().unwrap_or_default()
                 }
             }
-            (None, Some(old)) => old,
-            (None, None) => return Err(format!("variable {name} does not exist").into()),
+            None => self.get(&name)?.clone(),
         };
         apply_meta(&mut var, comment, expires);
         self.0.insert(name, var);
@@ -91,9 +95,7 @@ impl Vars {
     }
 
     pub fn unset(&mut self, names: &[VarName]) -> Result<()> {
-        if let Some(missing) = names.iter().find(|n| !self.0.contains_key(n)) {
-            return Err(format!("variable {missing} does not exist").into());
-        }
+        names.iter().try_for_each(|n| self.get(n).map(|_| ()))?;
         names.iter().for_each(|n| {
             self.0.remove(n);
         });
@@ -135,9 +137,7 @@ pub fn parse_dotenv(text: &str) -> Result<Vec<(VarName, String)>> {
 }
 
 pub fn to_dotenv(vars: &Vars, only: &[VarName]) -> Result<String> {
-    if let Some(missing) = only.iter().find(|n| !vars.0.contains_key(n)) {
-        return Err(format!("variable {missing} does not exist").into());
-    }
+    only.iter().try_for_each(|n| vars.get(n).map(|_| ()))?;
     let mut out = String::new();
     for (name, var) in vars
         .0
