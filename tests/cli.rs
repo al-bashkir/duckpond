@@ -249,6 +249,31 @@ fn comment_expiry_keep_value_and_expired_warning() {
 }
 
 #[test]
+fn get_prints_one_raw_value() {
+    let e = Env::new();
+    let leak = [HOSTILE, SECRET];
+    e.ok(&["create", "P"], "");
+    e.ok(&["set", "P", "V"], HOSTILE);
+    e.ok(&["set", "P", "OLD", "--expires", "2000-01-01"], SECRET);
+
+    // No quotes, no newline: the bytes that `set` read. Only V's own expiry is reported.
+    let o = e.ok(&["get", "P", "V"], "");
+    assert_eq!(o.stdout, HOSTILE);
+    assert_eq!(o.stderr, "");
+    let o = e.ok(&["get", "P", "OLD"], "");
+    assert_eq!(o.stdout, SECRET);
+    assert_eq!(o.stderr, "duckpond: warning: OLD expired on 2000-01-01\n");
+
+    let err = e.fail(&["get", "P", "NOPE"], "", &leak);
+    assert!(err.contains("variable NOPE does not exist"), "{err}");
+    // Without a terminal there is no picker.
+    let err = e.fail(&["get", "P"], "", &leak);
+    assert!(err.contains("missing NAME"), "{err}");
+    let err = e.fail(&["get"], "", &leak);
+    assert!(err.contains("missing PROFILE"), "{err}");
+}
+
+#[test]
 fn import_export_round_trip() {
     let e = Env::new();
     e.ok(&["create", "P"], "");

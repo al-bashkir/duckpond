@@ -98,6 +98,19 @@ pub fn unset(store: &Store, name: ProfileName, names: Vec<VarName>) -> Result<()
     p.save(store)
 }
 
+pub fn get(store: &Store, profile: Option<ProfileName>, name: Option<VarName>) -> Result<()> {
+    let mut vars = open(store, pick::profile(store, profile)?)?.vars;
+    let name = pick::var(&vars, name)?;
+    vars.get(&name)?;
+    vars.0.retain(|n, _| *n == name); // warn about this variable only
+    warn_expired(&vars);
+    let value = &vars.0[&name].value;
+    if std::io::stdout().is_terminal() {
+        vars::check_terminal_safe(value)?;
+    }
+    print(value)
+}
+
 pub fn delete(store: &Store, name: ProfileName, yes: bool) -> Result<()> {
     if !store.exists(&name) {
         return Err(format!("profile \"{name}\" does not exist").into());

@@ -30,6 +30,7 @@ fn run(command: Command) -> Result<()> {
             keep_value,
         } => commands::set(&store()?, profile, names, comment, expires, keep_value),
         Command::Unset { profile, names } => commands::unset(&store()?, profile, names),
+        Command::Get { profile, name } => commands::get(&store()?, profile, name),
         Command::Delete { profile, yes } => commands::delete(&store()?, profile, yes),
         Command::Import { profile, file } => commands::import(&store()?, profile, &file),
         Command::Export {

@@ -18,7 +18,7 @@ pub struct Cli {
 /// Command groups of the top-level help. Every subcommand is in exactly one group (tested).
 const GROUPS: &[(&str, &[&str])] = &[
     ("Profiles", &["list", "create", "delete"]),
-    ("Variables", &["set", "unset", "import", "export"]),
+    ("Variables", &["set", "unset", "get", "import", "export"]),
     ("Shell", &["load", "unload", "launch"]),
     ("Setup", &["init"]),
 ];
@@ -106,6 +106,15 @@ pub enum Command {
         /// Variables to remove
         #[arg(required = true, value_parser = parse::<VarName>)]
         names: Vec<VarName>,
+    },
+    /// Print the value of one variable as it is: no quotes, no newline
+    Get {
+        /// Profile to read
+        #[arg(value_parser = parse::<ProfileName>, add = pick::candidates())]
+        profile: Option<ProfileName>,
+        /// Variable to print; without it, pick one
+        #[arg(value_parser = parse::<VarName>)]
+        name: Option<VarName>,
     },
     /// Delete a profile
     Delete {

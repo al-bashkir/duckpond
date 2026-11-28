@@ -9,8 +9,9 @@ use inquire::InquireError;
 
 use crate::crypto;
 use crate::error::{Error, Result};
-use crate::name::ProfileName;
+use crate::name::{ProfileName, VarName};
 use crate::store::Store;
+use crate::vars::Vars;
 
 /// Profile names for shell completion. Any error gives an empty list: no prompt, no decryption.
 /// The shell passes the word with its quoting (`Fresh\ D`, `"Fresh D`). A name has no quote
@@ -44,6 +45,19 @@ pub fn profile(store: &Store, given: Option<ProfileName>) -> Result<ProfileName>
 }
 
 const NO_PROFILES: &str = "no profiles; create one with: duckpond create NAME";
+
+/// The variable given on the command line, else one chosen in the picker.
+pub fn var(vars: &Vars, given: Option<VarName>) -> Result<VarName> {
+    if let Some(name) = given {
+        return Ok(name);
+    }
+    if !interactive() {
+        return Err("missing NAME".to_string().into());
+    }
+    select("Variable", vars.0.keys().cloned().collect(), NO_VARS)
+}
+
+const NO_VARS: &str = "no variables; add one with: duckpond set PROFILE NAME";
 
 /// Fingerprint of a GPG secret key chosen in the menu (`create --gpg` without KEY).
 pub fn gpg_key() -> Result<String> {

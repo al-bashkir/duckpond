@@ -163,7 +163,7 @@ pub fn check_terminal_safe(text: &str) -> Result<()> {
         .any(|c| c.is_control() && c != '\n' && c != '\t')
     {
         return Err("refusing to print control characters to a terminal; \
-                    use -o FILE, a pipe, or list --reveal"
+                    send the output to a pipe or a file, or use list --reveal"
             .to_string()
             .into());
     }
@@ -568,7 +568,8 @@ mod tests {
         for bad in ["\u{1b}]0;T\u{7}", "\u{9b}2J", "\u{7f}", "a\rb"] {
             let msg = err(check_terminal_safe(bad));
             assert!(
-                msg.contains("-o FILE") && !msg.contains(bad),
+                msg.ends_with("send the output to a pipe or a file, or use list --reveal")
+                    && !msg.contains(bad),
                 "{bad:?}: {msg}"
             );
         }
