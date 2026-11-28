@@ -6,6 +6,17 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `get [PROFILE] [NAME]` prints the value of one variable as it is: no quotes and no
+  newline, so a pipe (a clipboard, `tmux load-buffer`) gets the exact bytes. Without
+  PROFILE or NAME it opens the picker, and a passphrase profile asks once.
+
+### Changed
+
+- When `export` refuses to print control characters to a terminal, the hint now says
+  "send the output to a pipe or a file". It no longer names only `-o`.
+
 ## [0.1.3] - 2026-11-23
 
 ### Changed

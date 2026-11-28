@@ -77,6 +77,8 @@ duckpond set work GITHUB_TOKEN --keep-value --expires none
 duckpond list                    # profile names
 duckpond list work               # NAME / VALUE (masked) / EXPIRES / COMMENT
 duckpond list work --reveal      # show values
+duckpond get work GITHUB_TOKEN   # one value as it is: no quotes, no newline
+duckpond get | wl-copy           # pick a profile, then a variable
 
 duckpond load work               # load into this shell
 duckpond load                    # pick a profile, then load it
@@ -123,8 +125,9 @@ so secrets do not land in your scrollback by mistake.
 - Prompts read and write `/dev/tty`. stdout carries only data, so `eval` never runs a prompt,
   a warning or an error message.
 - `list` masks values unless you give `--reveal`. Control characters are shown escaped,
-  so a value cannot send escape sequences to your terminal. `export` without `-o` refuses
-  to print a value with control characters to a terminal; a pipe or `-o` gets it unchanged.
+  so a value cannot send escape sequences to your terminal. `get`, and `export` without
+  `-o`, refuse to print a value with control characters to a terminal; a pipe or a file
+  gets it unchanged.
   Error messages show control characters escaped too, for example in a file name.
 - Profile names allow only `A-Z a-z 0-9 space . _ @ + -`, start with a letter or digit,
   and contain no path separators.
